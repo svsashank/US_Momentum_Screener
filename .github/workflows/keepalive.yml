@@ -1,0 +1,36 @@
+name: Supabase Keep-Alive
+
+on:
+  schedule:
+    # Runs every 5 days at 08:00 UTC — keeps Supabase free tier from pausing
+    # (Supabase pauses after 7 days of inactivity on free tier)
+    - cron: '0 8 */5 * *'
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Install supabase client
+        run: pip install supabase -q
+
+      - name: Ping Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python - <<'EOF'
+          import os
+          from supabase import create_client
+
+          sb   = create_client(os.environ['SUPABASE_URL'], os.environ['SUPABASE_KEY'])
+          resp = sb.table('screen_runs').select('run_date').order('run_date', desc=True).limit(1).execute()
+          row  = resp.data[0] if resp.data else None
+
+          if row:
+              print(f'✅ Supabase alive — last screen run: {row["run_date"]}')
+          else:
+              print('✅ Supabase alive — no screen runs yet')
+          EOF
