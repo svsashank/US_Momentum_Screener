@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Momentum Screener</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0d0f12;--surface:#141720;--surface2:#1c2030;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
+  --text:#e8ecf4;--muted:#7a8199;
+  --accent:#4f8ef7;--accent-dim:rgba(79,142,247,0.12);
+  --green:#3ecf8e;--green-dim:rgba(62,207,142,0.12);
+  --red:#f75f5f;--red-dim:rgba(247,95,95,0.12);
+  --font:'Inter',system-ui,sans-serif;--mono:'JetBrains Mono','Fira Code',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.6;min-height:100vh}
+.shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+.sidebar{background:var(--surface);border-right:1px solid var(--border);padding:1.5rem 0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
+.main{padding:2rem 2.5rem;overflow-y:auto}
+.logo{padding:0 1.5rem 1.5rem;border-bottom:1px solid var(--border);margin-bottom:1rem}
+.logo-mark{font-size:18px;font-weight:700;letter-spacing:-0.5px}
+.logo-sub{font-size:11px;color:var(--muted);letter-spacing:0.05em;text-transform:uppercase;margin-top:2px}
+.nav{flex:1}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 1.5rem;cursor:pointer;color:var(--muted);font-size:13px;font-weight:500;border-left:2px solid transparent;transition:all 0.15s;user-select:none}
+.nav-item:hover{color:var(--text);background:rgba(255,255,255,0.03)}
+.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:var(--accent-dim)}
+.sidebar-footer{padding:1rem 1.5rem;border-top:1px solid var(--border)}
+.run-info{font-size:11px;color:var(--muted)}
+.run-date{color:var(--text);font-weight:600;font-size:12px;margin-top:2px}
+.refresh-btn{margin-top:10px;width:100%;padding:8px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:6px;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s}
+.refresh-btn:hover{background:var(--accent);color:#fff}
+.panel{display:none}.panel.active{display:block}
+.page-header{margin-bottom:1.75rem}
+.page-title{font-size:20px;font-weight:700;letter-spacing:-0.3px}
+.page-sub{color:var(--muted);font-size:13px;margin-top:4px}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:1.75rem}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em}
+.stat-value{font-size:22px;font-weight:700;margin-top:4px;letter-spacing:-0.5px}
+.stat-value.accent{color:var(--accent)}.stat-value.green{color:var(--green)}
+.table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:1.5rem}
+.table-head{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.table-title{font-size:13px;font-weight:600}
+.table-count{font-size:11px;color:var(--muted);background:var(--surface2);padding:2px 8px;border-radius:999px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{text-align:left;padding:9px 14px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;border-bottom:1px solid var(--border);background:var(--surface2);white-space:nowrap}
+.tbl th.r,.tbl td.r{text-align:right}
+.tbl td{padding:10px 14px;border-bottom:1px solid var(--border);white-space:nowrap}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tr:hover td{background:rgba(255,255,255,0.025)}
+.rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--accent-dim);color:var(--accent);font-size:11px;font-weight:700}
+.ticker-cell{font-family:var(--mono);font-weight:600;font-size:13px}
+.score-cell{font-family:var(--mono);font-size:12px;color:var(--green);font-weight:600}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+.pill-buy{background:var(--green-dim);color:var(--green)}
+.pill-sell{background:var(--red-dim);color:var(--red)}
+.pill-hold{background:rgba(255,255,255,0.06);color:var(--muted)}
+.waterfall{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:1.75rem}
+.wf-item{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+.wf-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em}
+.wf-count{font-size:18px;font-weight:700;margin-top:2px;font-family:var(--mono)}
+.wf-item.pass .wf-count{color:var(--green)}.wf-item.pass{border-color:rgba(62,207,142,0.2)}
+.port-form{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1.25rem;margin-bottom:1.5rem}
+.form-title{font-size:13px;font-weight:600;margin-bottom:1rem}
+.form-row{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em}
+.form-input{background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px;font-family:var(--mono);outline:none}
+.form-input:focus{border-color:var(--accent)}
+.btn{padding:8px 16px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.85}
+.btn-danger{background:var(--red-dim);color:var(--red);border:1px solid var(--red)}.btn-danger:hover{background:var(--red);color:#fff}
+.btn-sm{padding:5px 10px;font-size:11px}
+.delta-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:1.5rem}
+.delta-card{border-radius:10px;padding:14px 16px;border:1px solid}
+.delta-card.buy{background:var(--green-dim);border-color:rgba(62,207,142,0.25)}
+.delta-card.sell{background:var(--red-dim);border-color:rgba(247,95,95,0.25)}
+.delta-card.hold{background:var(--surface);border-color:var(--border)}
+.delta-n{font-size:28px;font-weight:700;font-family:var(--mono)}
+.delta-card.buy .delta-n{color:var(--green)}.delta-card.sell .delta-n{color:var(--red)}.delta-card.hold .delta-n{color:var(--muted)}
+.delta-label{font-size:11px;text-transform:uppercase;letter-spacing:0.06em;margin-top:2px;color:var(--muted)}
+.history-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem;margin-bottom:10px;cursor:pointer;transition:border-color 0.15s}
+.history-item:hover{border-color:var(--border2)}
+.history-date{font-size:13px;font-weight:600}
+.history-meta{font-size:12px;color:var(--muted);margin-top:3px}
+.history-tickers{font-family:var(--mono);font-size:11px;color:var(--accent);margin-top:6px}
+.loading{text-align:center;padding:3rem;color:var(--muted);font-size:13px}
+.spinner{display:inline-block;width:18px;height:18px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;margin-right:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty{text-align:center;padding:2rem;color:var(--muted);font-size:13px}
+@media(max-width:768px){
+  .shell{grid-template-columns:1fr}
+  .sidebar{height:auto;position:static;flex-direction:row;flex-wrap:wrap;padding:1rem}
+  .logo{border-bottom:none;padding-bottom:0;margin-bottom:0}
+  .nav{display:flex;flex-direction:row;flex-wrap:wrap}
+  .nav-item{border-left:none;border-bottom:2px solid transparent;padding:6px 10px}
+  .nav-item.active{border-bottom-color:var(--accent)}
+  .sidebar-footer{display:none}
+  .main{padding:1.25rem}
+  .form-row{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-mark">Momentum</div>
+      <div class="logo-sub">S&amp;P 1500 · Live Screener</div>
+    </div>
+    <nav class="nav">
+      <div class="nav-item active" onclick="showPanel('screen',this)"><span>⊞</span> Top 15 picks</div>
+      <div class="nav-item" onclick="showPanel('all',this)"><span>≡</span> All passing</div>
+      <div class="nav-item" onclick="showPanel('portfolio',this)"><span>◎</span> Portfolio</div>
+      <div class="nav-item" onclick="showPanel('delta',this)"><span>⇄</span> Rebalance delta</div>
+      <div class="nav-item" onclick="showPanel('history',this)"><span>◷</span> Run history</div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="run-info">Last screen run</div>
+      <div class="run-date" id="sidebar-run-date">—</div>
+      <button class="refresh-btn" onclick="loadAll()">↻ Refresh data</button>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div id="panel-screen" class="panel active">
+      <div class="page-header">
+        <div class="page-title">Top 15 picks</div>
+        <div class="page-sub" id="screen-sub">Loading latest screen run...</div>
+      </div>
+      <div class="stat-row" id="screen-stats"></div>
+      <div class="waterfall" id="screen-waterfall"></div>
+      <div class="table-wrap">
+        <div class="table-head">
+          <span class="table-title">Ranked by SMA21 / SMA200</span>
+          <span class="table-count" id="top15-count">—</span>
+        </div>
+        <div id="top15-table"><div class="loading"><span class="spinner"></span>Loading...</div></div>
+      </div>
+    </div>
+
+    <div id="panel-all" class="panel">
+      <div class="page-header">
+        <div class="page-title">All passing stocks</div>
+        <div class="page-sub">Every stock that cleared all 6 filters, sorted by rank score</div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-head">
+          <span class="table-title">Filter results</span>
+          <span class="table-count" id="all-count">—</span>
+        </div>
+        <div id="all-table"><div class="loading"><span class="spinner"></span>Loading...</div></div>
+      </div>
+    </div>
+
+    <div id="panel-portfolio" class="panel">
+      <div class="page-header">
+        <div class="page-title">Portfolio</div>
+        <div class="page-sub">Your current holdings — enriched with latest screen data</div>
+      </div>
+      <div class="port-form">
+        <div class="form-title">Add / update holding</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Ticker</label>
+            <input class="form-input" id="inp-ticker" placeholder="AAPL" style="text-transform:uppercase">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Shares</label>
+            <input class="form-input" id="inp-shares" type="number" placeholder="10">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Avg cost $</label>
+            <input class="form-input" id="inp-cost" type="number" step="0.01" placeholder="213.50">
+          </div>
+          <button class="btn btn-primary" onclick="addHolding()">Add</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-head">
+          <span class="table-title">Holdings</span>
+          <span class="table-count" id="port-count">—</span>
+        </div>
+        <div id="portfolio-table"><div class="loading"><span class="spinner"></span>Loading...</div></div>
+      </div>
+    </div>
+
+    <div id="panel-delta" class="panel">
+      <div class="page-header">
+        <div class="page-title">Rebalance delta</div>
+        <div class="page-sub">Current holdings vs latest top 15</div>
+      </div>
+      <div class="delta-row" id="delta-summary"></div>
+      <div class="table-wrap">
+        <div class="table-head">
+          <span class="table-title">Actions</span>
+          <span class="table-count" id="delta-count">—</span>
+        </div>
+        <div id="delta-table"><div class="loading"><span class="spinner"></span>Loading...</div></div>
+      </div>
+    </div>
+
+    <div id="panel-history" class="panel">
+      <div class="page-header">
+        <div class="page-title">Run history</div>
+        <div class="page-sub">All screen runs stored in Supabase</div>
+      </div>
+      <div id="history-list"><div class="loading"><span class="spinner"></span>Loading...</div></div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ── CONFIG — paste your anon key here ────────────────────────────────────────
+const SUPABASE_URL = 'https://vttlxtkmhhyuscokznve.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ0dGx4dGttaGh5dXNjb2t6bnZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5Nzg3MDMsImV4cCI6MjA5NjU1NDcwM30.aUQwDbgKAM0oQea27iWnFvik0i53QUZrTTLg-nKioRY';
+// ─────────────────────────────────────────────────────────────────────────────
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let latestRun = null, top15 = [], allPassing = [], portfolio = [], snapshotMap = {};
+
+function showPanel(id, el) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  el.classList.add('active');
+}
+
+async function loadAll() {
+  await Promise.all([loadLatestRun(), loadPortfolio(), loadSnapshots()]);
+}
+
+async function loadLatestRun() {
+  const { data } = await sb.from('screen_runs')
+    .select('*').order('run_date', { ascending: false }).limit(1);
+  if (!data || !data.length) return;
+  latestRun  = data[0];
+  top15      = latestRun.top15       || [];
+  allPassing = latestRun.all_passing || [];
+  const d    = latestRun.run_date;
+  document.getElementById('sidebar-run-date').textContent = d;
+  document.getElementById('screen-sub').textContent =
+    `${(latestRun.universe||'').toUpperCase()} · screened ${d} · ${allPassing.length} stocks passed`;
+  renderScreenStats(); renderWaterfall(); renderTop15(); renderAll(); renderDelta(); loadHistory();
+}
+
+async function loadPortfolio() {
+  const { data } = await sb.from('portfolio').select('*');
+  portfolio = data || [];
+  renderPortfolio(); renderDelta();
+}
+
+async function loadSnapshots() {
+  const { data } = await sb.from('stock_snapshots')
+    .select('ticker,price,rank_score,rsi14,adv20,ann_vol,in_top15,top15_rank');
+  snapshotMap = {};
+  (data || []).forEach(s => { snapshotMap[s.ticker] = s; });
+}
+
+function renderScreenStats() {
+  if (!latestRun) return;
+  const rej = (latestRun.filters || {}).rejections || {};
+  document.getElementById('screen-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Universe</div><div class="stat-value accent">${(latestRun.universe||'').toUpperCase()}</div></div>
+    <div class="stat-card"><div class="stat-label">Passed filters</div><div class="stat-value green">${allPassing.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Top picks</div><div class="stat-value accent">${top15.length}</div></div>
+    <div class="stat-card"><div class="stat-label">Rejected RSI</div><div class="stat-value">${rej.rsi??'—'}</div></div>
+    <div class="stat-card"><div class="stat-label">Rejected ADV</div><div class="stat-value">${rej.adv??'—'}</div></div>
+    <div class="stat-card"><div class="stat-label">Rejected 52W</div><div class="stat-value">${rej.high52w??'—'}</div></div>`;
+}
+
+function renderWaterfall() {
+  if (!latestRun) return;
+  const rej = (latestRun.filters || {}).rejections || {};
+  const items = [
+    ['No data',      rej.no_data,    false],
+    ['MCap <$500M',  rej.mcap,       false],
+    ['ADV <$10M',    rej.adv,        false],
+    ['Vol >75%',     rej.volatility, false],
+    ['RSI ≤50',      rej.rsi,        false],
+    ['<SMA21',       rej.sma,        false],
+    ['52W prox',     rej.high52w,    false],
+    ['PASS ✓',       allPassing.length, true],
+  ];
+  document.getElementById('screen-waterfall').innerHTML = items.map(([l,n,pass]) =>
+    `<div class="wf-item ${pass?'pass':''}"><div class="wf-label">${l}</div><div class="wf-count">${n??'—'}</div></div>`
+  ).join('');
+}
+
+function renderTop15() {
+  document.getElementById('top15-count').textContent = `${top15.length} stocks`;
+  if (!top15.length) { document.getElementById('top15-table').innerHTML='<div class="empty">No data — run Colab notebook first.</div>'; return; }
+  document.getElementById('top15-table').innerHTML = `<table class="tbl">
+    <thead><tr>
+      <th style="width:34px">#</th><th>Ticker</th>
+      <th class="r">Price</th><th class="r">Rank score</th>
+      <th class="r">RSI</th><th class="r">Vol %</th>
+      <th class="r">ADV $/day</th><th class="r">52W%</th>
+    </tr></thead><tbody>` +
+    top15.map(s=>`<tr>
+      <td><span class="rank-badge">${s.index??'?'}</span></td>
+      <td class="ticker-cell">${s.ticker}</td>
+      <td class="r">$${fmt(s.price,2)}</td>
+      <td class="r score-cell">${fmt(s.rank_score,4)}</td>
+      <td class="r">${fmt(s.rsi,1)}</td>
+      <td class="r">${fmt(s.volatility_pct,1)}%</td>
+      <td class="r">$${fmtM(s.adv_m)}</td>
+      <td class="r">${fmt(s.pct_from_high,1)}%</td>
+    </tr>`).join('') + '</tbody></table>';
+}
+
+function renderAll() {
+  document.getElementById('all-count').textContent = `${allPassing.length} stocks`;
+  if (!allPassing.length) { document.getElementById('all-table').innerHTML='<div class="empty">No data.</div>'; return; }
+  const topSet = new Set(top15.map(s=>s.ticker));
+  document.getElementById('all-table').innerHTML = `<table class="tbl">
+    <thead><tr>
+      <th style="width:40px">Rank</th><th>Ticker</th>
+      <th class="r">Price</th><th class="r">Rank score</th>
+      <th class="r">RSI</th><th class="r">Vol %</th>
+      <th class="r">ADV $/day</th><th class="r">52W%</th>
+      <th style="text-align:center">Top 15</th>
+    </tr></thead><tbody>` +
+    allPassing.map(s=>`<tr>
+      <td style="color:var(--muted);font-size:11px">${s.index??''}</td>
+      <td class="ticker-cell">${s.ticker}</td>
+      <td class="r">$${fmt(s.price,2)}</td>
+      <td class="r score-cell">${fmt(s.rank_score,4)}</td>
+      <td class="r">${fmt(s.rsi,1)}</td>
+      <td class="r">${fmt(s.volatility_pct,1)}%</td>
+      <td class="r">$${fmtM(s.adv_m)}</td>
+      <td class="r">${fmt(s.pct_from_high,1)}%</td>
+      <td style="text-align:center">${topSet.has(s.ticker)?'<span class="pill pill-buy">Yes</span>':''}</td>
+    </tr>`).join('') + '</tbody></table>';
+}
+
+function renderPortfolio() {
+  document.getElementById('port-count').textContent = `${portfolio.length} holdings`;
+  if (!portfolio.length) { document.getElementById('portfolio-table').innerHTML='<div class="empty">No holdings yet. Add a position above.</div>'; return; }
+  document.getElementById('portfolio-table').innerHTML = `<table class="tbl">
+    <thead><tr>
+      <th>Ticker</th><th class="r">Shares</th><th class="r">Avg cost</th>
+      <th class="r">Price</th><th class="r">P&L %</th><th class="r">P&L $</th>
+      <th class="r">Rank score</th><th style="text-align:center">Top 15</th><th></th>
+    </tr></thead><tbody>` +
+    portfolio.map(h => {
+      const snap   = snapshotMap[h.ticker]||{};
+      const price  = snap.price??null;
+      const pnlPct = price&&h.avg_cost ? ((price-h.avg_cost)/h.avg_cost*100) : null;
+      const pnlAbs = price&&h.shares   ? ((price-h.avg_cost)*h.shares) : null;
+      const c      = pnlPct===null?'':pnlPct>=0?'style="color:var(--green)"':'style="color:var(--red)"';
+      return `<tr>
+        <td class="ticker-cell">${h.ticker}</td>
+        <td class="r">${h.shares??'—'}</td>
+        <td class="r">$${fmt(h.avg_cost,2)}</td>
+        <td class="r">$${fmt(price,2)}</td>
+        <td class="r" ${c}>${pnlPct!==null?(pnlPct>=0?'+':'')+fmt(pnlPct,2)+'%':'—'}</td>
+        <td class="r" ${c}>${pnlAbs!==null?(pnlAbs>=0?'+$':'-$')+fmt(Math.abs(pnlAbs),2):'—'}</td>
+        <td class="r score-cell">${fmt(snap.rank_score,4)}</td>
+        <td style="text-align:center">${snap.in_top15?'<span class="pill pill-buy">Yes</span>':'<span class="pill pill-hold">—</span>'}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="removeHolding('${h.ticker}')">Remove</button></td>
+      </tr>`;
+    }).join('') + '</tbody></table>';
+}
+
+function renderDelta() {
+  const target  = new Set(top15.map(s=>s.ticker));
+  const current = new Set(portfolio.map(h=>h.ticker));
+  const toBuy   = [...target].filter(t=>!current.has(t));
+  const toSell  = [...current].filter(t=>!target.has(t));
+  const toHold  = [...current].filter(t=>target.has(t));
+  document.getElementById('delta-summary').innerHTML = `
+    <div class="delta-card buy"><div class="delta-n">${toBuy.length}</div><div class="delta-label">Buy</div></div>
+    <div class="delta-card sell"><div class="delta-n">${toSell.length}</div><div class="delta-label">Sell</div></div>
+    <div class="delta-card hold"><div class="delta-n">${toHold.length}</div><div class="delta-label">Hold</div></div>`;
+  document.getElementById('delta-count').textContent = `${toBuy.length+toSell.length+toHold.length} actions`;
+  const rows = [
+    ...toBuy.map(t  => { const s=top15.find(x=>x.ticker===t)||{}; return `<tr><td><span class="pill pill-buy">Buy</span></td><td class="ticker-cell">${t}</td><td class="r">${s.index??'—'}</td><td class="r">$${fmt(s.price,2)}</td><td class="r score-cell">${fmt(s.rank_score,4)}</td></tr>`; }),
+    ...toHold.map(t => { const s=top15.find(x=>x.ticker===t)||{}; return `<tr><td><span class="pill pill-hold">Hold</span></td><td class="ticker-cell">${t}</td><td class="r">${s.index??'—'}</td><td class="r">$${fmt(s.price,2)}</td><td class="r score-cell">${fmt(s.rank_score,4)}</td></tr>`; }),
+    ...toSell.map(t => `<tr><td><span class="pill pill-sell">Sell</span></td><td class="ticker-cell">${t}</td><td class="r">—</td><td class="r">—</td><td class="r">—</td></tr>`),
+  ].join('');
+  document.getElementById('delta-table').innerHTML = rows
+    ? `<table class="tbl"><thead><tr><th style="width:70px">Action</th><th>Ticker</th><th class="r">Target #</th><th class="r">Price</th><th class="r">Rank score</th></tr></thead><tbody>${rows}</tbody></table>`
+    : '<div class="empty">Portfolio matches top 15 — nothing to do.</div>';
+}
+
+async function loadHistory() {
+  const { data } = await sb.from('screen_runs')
+    .select('id,run_date,universe,top15,filters,created_at')
+    .order('run_date', { ascending: false }).limit(20);
+  if (!data||!data.length) { document.getElementById('history-list').innerHTML='<div class="empty">No runs yet.</div>'; return; }
+  document.getElementById('history-list').innerHTML = data.map(r => {
+    const tickers = (r.top15||[]).slice(0,8).map(s=>s.ticker).join(' · ');
+    const more    = (r.top15||[]).length>8 ? ` +${r.top15.length-8}` : '';
+    const rej     = ((r.filters||{}).rejections)||{};
+    return `<div class="history-item">
+      <div class="history-date">${r.run_date} &nbsp;·&nbsp; <span style="color:var(--muted);font-size:12px">${(r.universe||'').toUpperCase()}</span></div>
+      <div class="history-meta">${(r.top15||[]).length} picks · ${rej.rsi??'?'} rejected RSI · ${(r.created_at||'').slice(0,16).replace('T',' ')}</div>
+      <div class="history-tickers">${tickers}${more}</div>
+    </div>`;
+  }).join('');
+}
+
+async function addHolding() {
+  const ticker = document.getElementById('inp-ticker').value.trim().toUpperCase();
+  const shares = parseFloat(document.getElementById('inp-shares').value);
+  const cost   = parseFloat(document.getElementById('inp-cost').value);
+  if (!ticker||isNaN(shares)||isNaN(cost)) { alert('Fill in all three fields.'); return; }
+  await sb.from('portfolio').upsert({ ticker, shares, avg_cost: cost, updated_at: new Date().toISOString() }, { onConflict: 'ticker' });
+  document.getElementById('inp-ticker').value = '';
+  document.getElementById('inp-shares').value = '';
+  document.getElementById('inp-cost').value   = '';
+  await loadPortfolio();
+}
+
+async function removeHolding(ticker) {
+  if (!confirm(`Remove ${ticker} from portfolio?`)) return;
+  await sb.from('portfolio').delete().eq('ticker', ticker);
+  await loadPortfolio();
+}
+
+function fmt(n,d=2) { return (n==null||isNaN(n)) ? '—' : Number(n).toFixed(d); }
+function fmtM(n) {
+  if (n==null||isNaN(n)) return '—';
+  if (n>=1000) return (n/1000).toFixed(1)+'B';
+  return n.toFixed(1)+'M';
+}
+
+loadAll();
+</script>
+</body>
+</html>
