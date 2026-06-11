@@ -65,7 +65,7 @@ def fetch_batch_with_retry(batch, start_str, end_str, max_retries=3):
 
 
 def fetch_ohlcv(tickers, lookback_days=400, batch_size=100):
-    end_date   = datetime.today().date()
+    end_date   = datetime.today().date() + timedelta(days=2)
     start_date = end_date - timedelta(days=lookback_days)
     start_str  = start_date.strftime('%Y-%m-%d')
     end_str    = end_date.strftime('%Y-%m-%d')

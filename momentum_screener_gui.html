@@ -221,7 +221,7 @@ async function getLatestRunId() {
 function startPolling() {
   clearInterval(pollTimer);
   let attempts = 0;
-  const MAX = 40; // 40 × 15s = 10 min timeout
+  const MAX = 80; // 80 × 15s = 20 min timeout
 
   pollTimer = setInterval(async () => {
     attempts++;
