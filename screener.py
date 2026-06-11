@@ -226,8 +226,19 @@ def compute_indicators(raw_data, mcap_data, screen_tickers):
 
 # ── Step 5: Screen ────────────────────────────────────────────────────────────
 def find_screen_date(ind):
+    # Anchor on a highly-liquid mega-cap that is virtually guaranteed to have
+    # data for any completed trading day (avoids picking a stale date just
+    # because some smaller/illiquid tickers lag in yfinance's batch response).
+    anchors = [t for t in ('AAPL', 'MSFT', 'SPY') if t in ind['close'].columns]
+    if anchors:
+        anchor_close = ind['close'][anchors[0]]
+        valid_dates = anchor_close.dropna().index
+        if len(valid_dates):
+            return valid_dates[-1]
+
+    # Fallback: relaxed coverage threshold (50% instead of 80%)
     non_null  = ind['close'].notna().sum(axis=1)
-    threshold = len(ind['close'].columns) * 0.80
+    threshold = len(ind['close'].columns) * 0.50
     return non_null[non_null >= threshold].index[-1]
 
 
