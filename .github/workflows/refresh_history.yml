@@ -1,0 +1,22 @@
+name: Refresh OHLCV History
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 3 1 * *'   # monthly, 1st of month, 3am UTC
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install yfinance supabase pandas numpy pyarrow requests
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          HISTORY_YEARS: '3'
+        run: python refresh_history.py
