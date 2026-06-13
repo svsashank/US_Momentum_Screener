@@ -1,0 +1,41 @@
+name: Run Backtest
+
+on:
+  repository_dispatch:
+    types: [run_backtest]
+  workflow_dispatch:
+    inputs:
+      start_date: {description: 'Start date YYYY-MM-DD', required: false}
+      end_date: {description: 'End date YYYY-MM-DD', required: false}
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install yfinance supabase pandas numpy pyarrow requests
+      - env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          BT_START_DATE: ${{ github.event.client_payload.start_date || github.event.inputs.start_date }}
+          BT_END_DATE: ${{ github.event.client_payload.end_date || github.event.inputs.end_date }}
+          BT_REBALANCE_TYPE: ${{ github.event.client_payload.rebalance_type }}
+          BT_INITIAL_CAPITAL: ${{ github.event.client_payload.initial_capital }}
+          BT_PORTFOLIO_SIZE: ${{ github.event.client_payload.portfolio_size }}
+          BT_MIN_MCAP: ${{ github.event.client_payload.min_mcap }}
+          BT_MIN_ADV: ${{ github.event.client_payload.min_adv }}
+          BT_MAX_VOLATILITY: ${{ github.event.client_payload.max_volatility }}
+          BT_RSI_THRESHOLD: ${{ github.event.client_payload.rsi_threshold }}
+          BT_MAX_FROM_HIGH: ${{ github.event.client_payload.max_from_high }}
+          BT_CMF_THRESHOLD: ${{ github.event.client_payload.cmf_threshold }}
+          BT_CASH_MODE: ${{ github.event.client_payload.cash_mode }}
+          BT_MIN_STOCKS_TO_INVEST: ${{ github.event.client_payload.min_stocks_to_invest }}
+          BT_RETENTION_RANK: ${{ github.event.client_payload.retention_rank }}
+          BT_COST_BUY: ${{ github.event.client_payload.cost_buy }}
+          BT_COST_SELL: ${{ github.event.client_payload.cost_sell }}
+          BT_RISK_FREE_RATE: ${{ github.event.client_payload.risk_free_rate }}
+        run: python run_backtest.py
