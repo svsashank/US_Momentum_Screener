@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>US Momentum Backtest</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a;
+    --border: #2e3250; --accent: #5b8fff; --accent2: #7c6fff;
+    --green: #3ecf8e; --red: #f66; --yellow: #f5c842;
+    --text: #e8eaf0; --muted: #7b82a8; --small: 13px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+
+  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .header h1 { font-size: 16px; font-weight: 600; letter-spacing: .3px; flex: 1; }
+  .header h1 span { color: var(--accent); }
+
+  #runBtn {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff; border: none; border-radius: 8px;
+    padding: 9px 20px; font-size: 13px; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; gap: 7px;
+    transition: opacity .2s;
+  }
+  #runBtn:disabled { opacity: .5; cursor: not-allowed; }
+  #runBtn .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
+  #runBtn.running .spinner { display: block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .run-status { font-size: var(--small); color: var(--muted); max-width: 320px; line-height: 1.4; }
+  .run-status.ok  { color: var(--green); }
+  .run-status.err { color: var(--red); }
+
+  #patWrap { display: flex; align-items: center; gap: 8px; }
+  #patInput { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 7px 10px; font-size: var(--small); width: 220px; }
+  #patInput::placeholder { color: var(--muted); }
+  #patToggle { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 12px; white-space: nowrap; }
+
+  .btn-sm { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 14px; font-size: var(--small); cursor: pointer; font-weight: 500; }
+  .btn-sm:hover { background: var(--border); }
+
+  .layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; padding: 20px; align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .card + .card { margin-top: 16px; }
+  .section-title { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; }
+
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .field input, .field select {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 7px 9px; font-size: var(--small);
+  }
+  .field-row { display: flex; gap: 8px; }
+  .field-row .field { flex: 1; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat { background: var(--surface2); border-radius: 8px; padding: 12px; text-align: center; }
+  .stat .val { font-size: 20px; font-weight: 700; }
+  .stat .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-top: 2px; }
+  .stat .val.pos { color: var(--green); }
+  .stat .val.neg { color: var(--red); }
+
+  .chart-wrap { background: var(--surface2); border-radius: 8px; padding: 12px; margin-bottom: 16px; }
+  canvas { width: 100%; display: block; }
+
+  .tbl-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: var(--small); }
+  th { background: var(--surface2); padding: 10px 12px; text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+  td { padding: 9px 12px; border-top: 1px solid var(--border); white-space: nowrap; }
+  tr:hover td { background: var(--surface2); }
+  .ticker-cell { font-weight: 600; color: var(--accent); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge.buy  { background: rgba(62,207,142,.15); color: var(--green); }
+  .badge.sell, .badge.sell_cash { background: rgba(255,102,102,.15); color: var(--red); }
+  .badge.trim { background: rgba(245,200,66,.15); color: var(--yellow); }
+
+  .empty { color: var(--muted); padding: 32px; text-align: center; }
+  .alert { padding: 12px 16px; border-radius: 8px; font-size: var(--small); margin-bottom: 16px; }
+  .alert.info { background: rgba(91,143,255,.1); border: 1px solid rgba(91,143,255,.3); color: var(--accent); }
+
+  .tabs { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .tab { padding: 9px 16px; border-radius: 8px 8px 0 0; cursor: pointer; font-size: var(--small); font-weight: 500; color: var(--muted); border: 1px solid transparent; border-bottom: none; }
+  .tab.active { background: var(--bg); color: var(--text); border-color: var(--border); }
+  .tab:hover:not(.active) { color: var(--text); }
+  .subpanel { display: none; }
+  .subpanel.active { display: block; }
+</style>
+</head>
+<body>
+
+<script>
+const SUPABASE_URL = 'https://vttlxtkmhhyuscokznve.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ0dGx4dGttaGh5dXNjb2t6bnZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5Nzg3MDMsImV4cCI6MjA5NjU1NDcwM30.aUQwDbgKAM0oQea27iWnFvik0i53QUZrTTLg-nKioRY';
+const GITHUB_OWNER = 'svsashank';
+const GITHUB_REPO  = 'US_Momentum_Screener';
+const CURRENCY = '$';
+const ADV_LABEL = 'ADV $M';
+</script>
+
+<div class="header">
+  <h1>US Momentum Backtest <span>· S&amp;P 1500</span></h1>
+  <a href="livescreen.html" class="btn-sm" style="text-decoration:none;color:var(--text)">📈 Live Screen</a>
+  <div id="patWrap">
+    <input type="password" id="patInput" placeholder="GitHub PAT (repo scope)" autocomplete="off">
+    <button class="btn-sm" id="patToggle" onclick="togglePat()">show</button>
+  </div>
+  <button id="runBtn" onclick="triggerRun()">
+    <div class="spinner"></div>
+    <span id="runBtnLabel">▶ Run Backtest</span>
+  </button>
+  <div class="run-status" id="runStatus">Configure parameters and run, or load a past run.</div>
+</div>
+
+<div class="layout">
+  <!-- ── Config panel ── -->
+  <div>
+    <div class="card">
+      <div class="section-title">Backtest Window</div>
+      <div class="field-row">
+        <div class="field"><label>Start date</label><input type="date" id="cfgStartDate" value="2022-01-01"></div>
+        <div class="field"><label>End date</label><input type="date" id="cfgEndDate"></div>
+      </div>
+      <div class="field">
+        <label>Rebalance frequency</label>
+        <select id="cfgRebalance">
+          <option value="monthly" selected>Monthly</option>
+          <option value="quarterly">Quarterly</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Initial capital ($)</label>
+        <input type="number" id="cfgCapital" value="1000000" step="10000">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Screening Parameters</div>
+      <div class="field-row">
+        <div class="field"><label>Portfolio size</label><input type="number" id="cfgPortfolioSize" value="15"></div>
+        <div class="field"><label>SMA short</label><input type="number" id="cfgSmaShort" value="21"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>SMA long</label><input type="number" id="cfgSmaLong" value="200"></div>
+        <div class="field"><label>RSI threshold</label><input type="number" id="cfgRsi" value="50"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Max volatility</label><input type="number" id="cfgMaxVol" value="0.75" step="0.05"></div>
+        <div class="field"><label>Max % from 52W high</label><input type="number" id="cfgMaxFromHigh" value="0.25" step="0.05"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Min MCap ($M)</label><input type="number" id="cfgMinMcap" value="500"></div>
+        <div class="field"><label>Min ADV ($M)</label><input type="number" id="cfgMinAdv" value="10"></div>
+      </div>
+      <div class="field">
+        <label>CMF threshold</label>
+        <input type="number" id="cfgCmf" value="0.1" step="0.05">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Portfolio Mechanics</div>
+      <div class="field">
+        <label>Cash mode</label>
+        <select id="cfgCashMode">
+          <option value="partial" selected>Partial (unfilled slots = cash)</option>
+          <option value="full_or_cash">Full or cash (liquidate if too few pass)</option>
+        </select>
+      </div>
+      <div class="field" id="minStocksField" style="display:none">
+        <label>Min stocks to invest (full_or_cash)</label>
+        <input type="number" id="cfgMinStocks" value="15">
+      </div>
+      <div class="field">
+        <label>Retention rank (0 = disabled, sell anything outside fresh top-N)</label>
+        <input type="number" id="cfgRetention" value="25">
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Buy cost (fraction)</label><input type="number" id="cfgCostBuy" value="0.0008" step="0.0001"></div>
+        <div class="field"><label>Sell cost (fraction)</label><input type="number" id="cfgCostSell" value="0.0008" step="0.0001"></div>
+      </div>
+      <div class="field">
+        <label>Risk-free rate (% annual, for cash)</label>
+        <input type="number" id="cfgRiskFree" value="5.0" step="0.5">
+      </div>
+      <div class="hint">History must be refreshed via refresh_history.py before backtests can run (Supabase Storage).</div>
+    </div>
+  </div>
+
+  <!-- ── Results panel ── -->
+  <div>
+    <div id="resultsArea"><div class="empty">No backtest run loaded yet. Configure parameters on the left and click ▶ Run Backtest, or it will auto-load the most recent run below.</div></div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="section-title">Past Runs</div>
+      <div id="pastRuns"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function sb(path, opts={}) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+      'Prefer': opts.prefer || '',
+      ...opts.headers
+    },
+    ...opts
+  });
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  const txt = await r.text();
+  return txt ? JSON.parse(txt) : null;
+}
+
+function togglePat() {
+  const inp = document.getElementById('patInput');
+  const btn = document.getElementById('patToggle');
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = 'hide'; }
+  else { inp.type = 'password'; btn.textContent = 'show'; }
+}
+
+document.getElementById('cfgCashMode').addEventListener('change', e => {
+  document.getElementById('minStocksField').style.display = e.target.value === 'full_or_cash' ? 'block' : 'none';
+});
+
+function setRunStatus(msg, cls) {
+  const el = document.getElementById('runStatus');
+  el.textContent = msg;
+  el.className = 'run-status' + (cls ? ` ${cls}` : '');
+}
+
+function resetRunBtn() {
+  const btn = document.getElementById('runBtn');
+  btn.disabled = false;
+  btn.classList.remove('running');
+  document.getElementById('runBtnLabel').textContent = '▶ Run Backtest';
+}
+
+function gatherConfig() {
+  return {
+    start_date: document.getElementById('cfgStartDate').value || null,
+    end_date: document.getElementById('cfgEndDate').value || null,
+    rebalance_type: document.getElementById('cfgRebalance').value,
+    initial_capital: parseFloat(document.getElementById('cfgCapital').value),
+    portfolio_size: parseInt(document.getElementById('cfgPortfolioSize').value),
+    min_mcap: parseFloat(document.getElementById('cfgMinMcap').value),
+    min_adv: parseFloat(document.getElementById('cfgMinAdv').value),
+    max_volatility: parseFloat(document.getElementById('cfgMaxVol').value),
+    rsi_threshold: parseFloat(document.getElementById('cfgRsi').value),
+    max_from_high: parseFloat(document.getElementById('cfgMaxFromHigh').value),
+    cmf_threshold: parseFloat(document.getElementById('cfgCmf').value),
+    sma_short: parseInt(document.getElementById('cfgSmaShort').value),
+    sma_long: parseInt(document.getElementById('cfgSmaLong').value),
+    cash_mode: document.getElementById('cfgCashMode').value,
+    min_stocks_to_invest: parseInt(document.getElementById('cfgMinStocks').value),
+    retention_rank: parseInt(document.getElementById('cfgRetention').value),
+    cost_buy: parseFloat(document.getElementById('cfgCostBuy').value),
+    cost_sell: parseFloat(document.getElementById('cfgCostSell').value),
+    risk_free_rate: parseFloat(document.getElementById('cfgRiskFree').value),
+  };
+}
+
+let pollTimer = null;
+let pollLatestId = null;
+
+async function triggerRun() {
+  const pat = document.getElementById('patInput').value.trim();
+  if (!pat) { setRunStatus('Paste your GitHub PAT first.', 'err'); return; }
+
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.classList.add('running');
+  document.getElementById('runBtnLabel').textContent = 'Running…';
+  setRunStatus('Triggering GitHub Actions…', '');
+
+  const payload = gatherConfig();
+
+  try {
+    const r = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/dispatches`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${pat}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ event_type: 'run_backtest', client_payload: payload })
+      }
+    );
+    if (r.status !== 204) {
+      const txt = await r.text();
+      throw new Error(`GitHub API ${r.status}: ${txt}`);
+    }
+    setRunStatus('✓ Triggered! Backtests can take 5–20 min depending on date range…', '');
+    pollLatestId = await getLatestRunId();
+    startPolling();
+  } catch(e) {
+    setRunStatus(`Error: ${e.message}`, 'err');
+    resetRunBtn();
+  }
+}
+
+async function getLatestRunId() {
+  try {
+    const rows = await sb('backtest_runs?select=id&order=triggered_at.desc&limit=1');
+    return rows?.[0]?.id || null;
+  } catch { return null; }
+}
+
+function startPolling() {
+  clearInterval(pollTimer);
+  let attempts = 0;
+  const MAX = 120; // 120 x 15s = 30 min
+
+  pollTimer = setInterval(async () => {
+    attempts++;
+    const elapsed = attempts * 15;
+    setRunStatus(`⏳ Waiting… (${elapsed}s elapsed)`, '');
+
+    try {
+      const latestId = await getLatestRunId();
+      if (latestId && latestId !== pollLatestId) {
+        clearInterval(pollTimer);
+        setRunStatus(`✅ Backtest complete`, 'ok');
+        resetRunBtn();
+        await loadLatestRun();
+        await loadPastRuns();
+      }
+    } catch(e) { /* keep polling */ }
+
+    if (attempts >= MAX) {
+      clearInterval(pollTimer);
+      setRunStatus('Timed out — check GitHub Actions for status.', 'err');
+      resetRunBtn();
+    }
+  }, 15000);
+}
+
+// ── Results rendering ──────────────────────────────────────────────────────
+function fmtNum(v, dec=2) {
+  if (v == null) return '—';
+  return Number(v).toFixed(dec);
+}
+function fmtPct(v, dec=1) {
+  if (v == null) return '—';
+  return (Number(v)*100).toFixed(dec) + '%';
+}
+
+function drawEquityCurve(canvas, curve) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = 220;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
+
+  if (!curve.length) return;
+  const values = curve.map(d => d.value);
+  const min = Math.min(...values), max = Math.max(...values);
+  const pad = 30;
+  const xStep = (w - pad*2) / (curve.length - 1 || 1);
+  const yScale = (h - pad*2) / ((max - min) || 1);
+
+  // Grid
+  ctx.strokeStyle = '#2e3250';
+  ctx.lineWidth = 1;
+  for (let i=0;i<=4;i++) {
+    const y = pad + (h-pad*2) * i/4;
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w-pad, y); ctx.stroke();
+  }
+
+  // Line
+  ctx.strokeStyle = '#5b8fff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  curve.forEach((d, i) => {
+    const x = pad + i * xStep;
+    const y = h - pad - (d.value - min) * yScale;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Fill under line
+  ctx.lineTo(pad + (curve.length-1)*xStep, h-pad);
+  ctx.lineTo(pad, h-pad);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(91,143,255,.08)';
+  ctx.fill();
+
+  // Labels
+  ctx.fillStyle = '#7b82a8';
+  ctx.font = '11px Inter, sans-serif';
+  ctx.fillText(`$${(max).toLocaleString(undefined,{maximumFractionDigits:0})}`, 4, pad+4);
+  ctx.fillText(`$${(min).toLocaleString(undefined,{maximumFractionDigits:0})}`, 4, h-pad+2);
+  ctx.fillText(curve[0].date, pad, h-6);
+  ctx.textAlign = 'right';
+  ctx.fillText(curve[curve.length-1].date, w-pad, h-6);
+  ctx.textAlign = 'left';
+}
+
+function renderRun(run) {
+  const stats = run.stats || {};
+  const cfg = run.config || {};
+  const curve = run.portfolio_curve || [];
+  const trades = run.trades || [];
+
+  const cagrCls = (stats.cagr ?? 0) >= 0 ? 'pos' : 'neg';
+  const ddCls = 'neg';
+
+  let html = `
+  <div class="alert info">
+    ${run.start_date} → ${run.end_date} &nbsp;·&nbsp; ${run.rebalance_type} rebalance
+    &nbsp;·&nbsp; Capital: ${CURRENCY}${Number(run.initial_capital).toLocaleString()}
+    &nbsp;·&nbsp; Run at ${new Date(run.triggered_at).toLocaleString()}
+  </div>
+  <div class="stats-grid">
+    <div class="stat"><div class="val ${cagrCls}">${fmtPct(stats.cagr)}</div><div class="lbl">CAGR</div></div>
+    <div class="stat"><div class="val ${cagrCls}">${fmtPct(stats.total_return)}</div><div class="lbl">Total Return</div></div>
+    <div class="stat"><div class="val">${fmtPct(stats.ann_volatility)}</div><div class="lbl">Ann. Volatility</div></div>
+    <div class="stat"><div class="val">${fmtNum(stats.sharpe)}</div><div class="lbl">Sharpe</div></div>
+    <div class="stat"><div class="val ${ddCls}">${fmtPct(stats.max_drawdown)}</div><div class="lbl">Max Drawdown</div></div>
+    <div class="stat"><div class="val">${fmtPct(stats.win_rate)}</div><div class="lbl">Win Rate</div></div>
+  </div>
+  <div class="chart-wrap"><canvas id="equityCanvas"></canvas></div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchSub('snapshots',this)">Period Snapshots</div>
+    <div class="tab" onclick="switchSub('trades',this)">Trade Log (${trades.length})</div>
+    <div class="tab" onclick="switchSub('config',this)">Config Used</div>
+  </div>
+
+  <div id="sub-snapshots" class="subpanel active">${renderSnapshots(run.snapshots || [])}</div>
+  <div id="sub-trades" class="subpanel">${renderTrades(trades)}</div>
+  <div id="sub-config" class="subpanel">${renderConfig(cfg, run)}</div>
+  `;
+
+  document.getElementById('resultsArea').innerHTML = html;
+  const canvas = document.getElementById('equityCanvas');
+  if (canvas && curve.length) {
+    drawEquityCurve(canvas, curve);
+    window.addEventListener('resize', () => drawEquityCurve(canvas, curve), { once: true });
+  }
+}
+
+function switchSub(id, el) {
+  document.querySelectorAll('#resultsArea .tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('#resultsArea .subpanel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(`sub-${id}`).classList.add('active');
+}
+
+function renderSnapshots(snapshots) {
+  if (!snapshots.length) return '<div class="empty">No snapshots.</div>';
+  let html = `<div class="tbl-wrap"><table><thead><tr>
+    <th>Date</th><th>Portfolio Value</th><th>Stocks Screened</th>
+    <th>Slots Used</th><th>Cash Slots</th><th>In Cash</th><th>Cash Balance</th>
+  </tr></thead><tbody>`;
+  snapshots.forEach(s => {
+    html += `<tr>
+      <td>${s.date}</td>
+      <td>${CURRENCY}${Number(s.portfolio_value).toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+      <td>${s.stocks_screened}</td>
+      <td>${s.slots_used}</td>
+      <td>${s.cash_slots}</td>
+      <td>${s.in_cash ? 'Yes' : 'No'}</td>
+      <td>${CURRENCY}${Number(s.cash_balance).toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function renderTrades(trades) {
+  if (!trades.length) return '<div class="empty">No trades.</div>';
+  let html = `<div class="tbl-wrap"><table><thead><tr>
+    <th>Date</th><th>Ticker</th><th>Action</th><th>Price</th><th>Shares</th>
+  </tr></thead><tbody>`;
+  trades.slice().reverse().forEach(t => {
+    const cls = (t.action || '').toLowerCase();
+    html += `<tr>
+      <td>${t.date}</td>
+      <td class="ticker-cell">${t.ticker}</td>
+      <td><span class="badge ${cls}">${t.action}</span></td>
+      <td>${CURRENCY}${fmtNum(t.price)}</td>
+      <td>${t.shares}</td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function renderConfig(cfg, run) {
+  const rows = Object.entries(cfg).filter(([k]) => !k.startsWith('_'));
+  let html = `<div class="tbl-wrap"><table><thead><tr><th>Parameter</th><th>Value</th></tr></thead><tbody>`;
+  rows.forEach(([k,v]) => {
+    html += `<tr><td>${k}</td><td>${typeof v === 'object' ? JSON.stringify(v) : v}</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  html = `<div class="alert info">Note: mcap filter in backtests currently uses a relaxed placeholder (no point-in-time market cap history yet) — see run_backtest.py TODO.</div>` + html;
+  return html;
+}
+
+// ── Load runs ──────────────────────────────────────────────────────────────
+async function loadLatestRun() {
+  try {
+    const rows = await sb('backtest_runs?select=*&order=triggered_at.desc&limit=1');
+    if (!rows || !rows.length) {
+      document.getElementById('resultsArea').innerHTML = '<div class="empty">No backtest runs yet. Configure parameters and click ▶ Run Backtest.</div>';
+      return;
+    }
+    renderRun(rows[0]);
+  } catch(e) {
+    document.getElementById('resultsArea').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+  }
+}
+
+async function loadPastRuns() {
+  try {
+    const rows = await sb('backtest_runs?select=id,start_date,end_date,rebalance_type,stats,triggered_at&order=triggered_at.desc&limit=10') || [];
+    if (!rows.length) {
+      document.getElementById('pastRuns').innerHTML = '<div class="empty">No past runs.</div>';
+      return;
+    }
+    let html = `<div class="tbl-wrap"><table><thead><tr>
+      <th>Run At</th><th>Window</th><th>Rebalance</th><th>CAGR</th><th>Sharpe</th><th>Max DD</th><th></th>
+    </tr></thead><tbody>`;
+    rows.forEach(r => {
+      const s = r.stats || {};
+      html += `<tr>
+        <td>${new Date(r.triggered_at).toLocaleString()}</td>
+        <td>${r.start_date} → ${r.end_date}</td>
+        <td>${r.rebalance_type}</td>
+        <td>${fmtPct(s.cagr)}</td>
+        <td>${fmtNum(s.sharpe)}</td>
+        <td>${fmtPct(s.max_drawdown)}</td>
+        <td><button class="btn-sm" onclick="loadRunById('${r.id}')">View</button></td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+    document.getElementById('pastRuns').innerHTML = html;
+  } catch(e) {
+    document.getElementById('pastRuns').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+  }
+}
+
+async function loadRunById(id) {
+  try {
+    const rows = await sb(`backtest_runs?select=*&id=eq.${id}`);
+    if (rows && rows.length) renderRun(rows[0]);
+  } catch(e) { alert(`Error: ${e.message}`); }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+loadLatestRun();
+loadPastRuns();
+</script>
+</body>
+</html>
