@@ -20,10 +20,25 @@ warnings.filterwarnings('ignore')
 SUPABASE_URL = os.environ['SUPABASE_URL']
 SUPABASE_KEY = os.environ['SUPABASE_KEY']
 
-# ── Strategy parameters (loaded from config.json) ─────────────────────────────
+# ── Strategy parameters (config.json + optional GUI overrides via SCREEN_PARAMS)
 CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'config.json')
 with open(CONFIG_FILE) as f:
     CONFIG = json.load(f)
+
+# GUI sends overrides as a single JSON string (avoids dispatch 10-property limit)
+_params_raw = os.environ.get('SCREEN_PARAMS', '')
+if _params_raw:
+    try:
+        _decoded = json.loads(_params_raw)
+        _params = json.loads(_decoded) if isinstance(_decoded, str) else _decoded
+        _int_keys = ['portfolio_size', 'sma_short', 'sma_long', 'rsi_period',
+                     'vol_lookback', 'adv_period', 'cmf_period']
+        for k, v in _params.items():
+            if v is not None and v != '' and k in CONFIG:
+                CONFIG[k] = int(v) if k in _int_keys else float(v)
+        print(f'⚙ SCREEN_PARAMS applied: {list(_params.keys())}')
+    except Exception as e:
+        print(f'⚠ SCREEN_PARAMS parse error: {e} — using config.json defaults')
 
 UNIVERSE_NAME  = CONFIG['universe_name']
 PORTFOLIO_SIZE = CONFIG['portfolio_size']

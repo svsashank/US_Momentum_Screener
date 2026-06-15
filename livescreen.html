@@ -69,6 +69,10 @@
   .crud-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
   .crud-row input { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 10px; font-size: var(--small); width: 120px; }
   .crud-row input::placeholder { color: var(--muted); }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .field input { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 7px 9px; font-size: 13px; }
+
   .btn-sm { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 14px; font-size: var(--small); cursor: pointer; font-weight: 500; }
   .btn-sm:hover { background: var(--border); }
   .btn-sm.danger { color: var(--red); border-color: rgba(255,102,102,.3); }
@@ -118,6 +122,7 @@ const GITHUB_REPO  = 'US_Momentum_Screener';
   <div class="tab active" onclick="switchTab('top15',this)">Top 15</div>
   <div class="tab" onclick="switchTab('passing',this)">All Passing</div>
   <div class="tab" onclick="switchTab('portfolio',this)">Portfolio</div>
+  <div class="tab" onclick="switchTab('params',this)">⚙ Parameters</div>
   <div class="tab" onclick="switchTab('delta',this)">Rebalance Delta</div>
   <div class="tab" onclick="switchTab('history',this)">Run History</div>
 </div>
@@ -136,6 +141,36 @@ const GITHUB_REPO  = 'US_Momentum_Screener';
 </div>
 <div id="panel-delta"   class="panel"><div class="empty">Run a screen to see rebalance delta.</div></div>
 <div id="panel-history" class="panel"><div class="empty">Loading run history…</div></div>
+
+<div id="panel-params" class="panel">
+  <div style="max-width:700px">
+    <div class="alert info" style="margin-bottom:20px">
+      Changes here apply to the <em>next</em> run only — they override config.json for that run but don't save permanently. To change defaults, edit config.json and commit.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <div class="section-title" style="margin-bottom:12px">Screening Filters</div>
+        <div class="field"><label>Portfolio size</label><input type="number" id="pPortfolioSize" value="15"></div>
+        <div class="field"><label>SMA short</label><input type="number" id="pSmaShort" value="21"></div>
+        <div class="field"><label>SMA long</label><input type="number" id="pSmaLong" value="200"></div>
+        <div class="field"><label>RSI threshold</label><input type="number" id="pRsi" value="50"></div>
+        <div class="field"><label>Max volatility</label><input type="number" id="pMaxVol" value="0.75" step="0.05"></div>
+        <div class="field"><label>Max % from 52W high</label><input type="number" id="pMaxFromHigh" value="0.25" step="0.05"></div>
+        <div class="field"><label>CMF threshold</label><input type="number" id="pCmf" value="0.1" step="0.05"></div>
+      </div>
+      <div>
+        <div class="section-title" style="margin-bottom:12px">Liquidity</div>
+        <div class="field"><label>Min MCap ($M)</label><input type="number" id="pMinMcap" value="500"></div>
+        <div class="field"><label>Min ADV ($M)</label><input type="number" id="pMinAdv" value="10"></div>
+        <div class="field"><label>Lookback days</label><input type="number" id="pLookback" value="400"></div>
+      </div>
+    </div>
+    <div style="margin-top:20px;display:flex;gap:10px">
+      <button class="btn-sm" onclick="resetParams()">↺ Reset to defaults</button>
+      <button onclick="triggerRun()" style="background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;font-weight:600;cursor:pointer">▶ Run with these params</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ── Supabase helpers ──────────────────────────────────────────────────────────
@@ -156,6 +191,27 @@ async function sb(path, opts={}) {
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
+function gatherScreenParams() {
+  return {
+    portfolio_size: document.getElementById('pPortfolioSize').value,
+    sma_short: document.getElementById('pSmaShort').value,
+    sma_long: document.getElementById('pSmaLong').value,
+    rsi_threshold: document.getElementById('pRsi').value,
+    max_volatility: document.getElementById('pMaxVol').value,
+    max_from_high: document.getElementById('pMaxFromHigh').value,
+    cmf_threshold: document.getElementById('pCmf').value,
+    min_mcap: document.getElementById('pMinMcap').value,
+    min_adv: document.getElementById('pMinAdv').value,
+    lookback_days: document.getElementById('pLookback').value,
+  };
+}
+
+function resetParams() {
+  const d = { pPortfolioSize:15, pSmaShort:21, pSmaLong:200, pRsi:50,
+    pMaxVol:0.75, pMaxFromHigh:0.25, pCmf:0.1, pMinMcap:500, pMinAdv:10, pLookback:400 };
+  Object.entries(d).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.value = val; });
+}
+
 function switchTab(id, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -195,7 +251,7 @@ async function triggerRun() {
           'Accept': 'application/vnd.github.v3+json',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ event_type: 'run_screen' })
+        body: JSON.stringify({ event_type: 'run_screen', client_payload: { params: JSON.stringify(gatherScreenParams()) } })
       }
     );
     if (r.status !== 204) {
