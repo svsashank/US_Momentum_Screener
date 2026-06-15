@@ -293,7 +293,7 @@ async function triggerRun() {
           'Accept': 'application/vnd.github.v3+json',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ event_type: 'run_backtest', client_payload: payload })
+        body: JSON.stringify({ event_type: 'run_backtest', client_payload: { params: JSON.stringify(payload) } })
       }
     );
     if (r.status !== 204) {

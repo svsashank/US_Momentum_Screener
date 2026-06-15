@@ -33,37 +33,29 @@ with open(CONFIG_FILE) as f:
 UNIVERSE_NAME = BASE_CONFIG['universe_name']
 
 
-def env_override(config, key, env_name, cast=float):
-    """Override a config value from an environment variable if set."""
-    val = os.environ.get(env_name)
-    if val is not None and val != '':
-        config[key] = cast(val)
-    return config
-
-
 def build_config():
-    """Build the run config: base config.json + env-var overrides for
-    everything the GUI exposes as configurable."""
+    """Build the run config: base config.json merged with GUI params.
+    GUI sends all params as a single JSON string in BT_PARAMS env var
+    (avoids GitHub repository_dispatch 10-property limit)."""
     cfg = dict(BASE_CONFIG)
 
-    # Screening parameters
-    env_override(cfg, 'portfolio_size', 'BT_PORTFOLIO_SIZE', int)
-    env_override(cfg, 'min_mcap', 'BT_MIN_MCAP', float)
-    env_override(cfg, 'min_adv', 'BT_MIN_ADV', float)
-    env_override(cfg, 'max_volatility', 'BT_MAX_VOLATILITY', float)
-    env_override(cfg, 'rsi_threshold', 'BT_RSI_THRESHOLD', float)
-    env_override(cfg, 'max_from_high', 'BT_MAX_FROM_HIGH', float)
-    env_override(cfg, 'cmf_threshold', 'BT_CMF_THRESHOLD', float)
-    env_override(cfg, 'sma_short', 'BT_SMA_SHORT', int)
-    env_override(cfg, 'sma_long', 'BT_SMA_LONG', int)
-
-    # Backtest mechanics
-    env_override(cfg, 'cost_buy', 'BT_COST_BUY', float)
-    env_override(cfg, 'cost_sell', 'BT_COST_SELL', float)
-    cfg['cash_mode'] = os.environ.get('BT_CASH_MODE', cfg.get('cash_mode', 'partial'))
-    env_override(cfg, 'min_stocks_to_invest', 'BT_MIN_STOCKS_TO_INVEST', int)
-    env_override(cfg, 'retention_rank', 'BT_RETENTION_RANK', int)
-    env_override(cfg, 'risk_free_rate', 'BT_RISK_FREE_RATE', float)
+    params_json = os.environ.get('BT_PARAMS', '')
+    if params_json:
+        try:
+            params = json.loads(params_json)
+            # Screening parameters
+            int_keys = ['portfolio_size', 'sma_short', 'sma_long',
+                        'min_stocks_to_invest', 'retention_rank']
+            for k, v in params.items():
+                if k in ('start_date', 'end_date', 'rebalance_type',
+                         'initial_capital', 'cash_mode'):
+                    continue  # handled separately below
+                if v is not None and v != '':
+                    cfg[k] = int(v) if k in int_keys else float(v)
+            if 'cash_mode' in params:
+                cfg['cash_mode'] = params['cash_mode']
+        except Exception as e:
+            print(f'⚠ Failed to parse BT_PARAMS: {e} — using config.json defaults')
 
     return cfg
 
@@ -99,10 +91,12 @@ def main():
 
     config = build_config()
 
-    start_date = os.environ.get('BT_START_DATE')   # 'YYYY-MM-DD' or empty
-    end_date   = os.environ.get('BT_END_DATE')      # 'YYYY-MM-DD' or empty
-    rebalance_type = os.environ.get('BT_REBALANCE_TYPE', 'monthly')
-    initial_capital = float(os.environ.get('BT_INITIAL_CAPITAL', '1000000'))
+    params_json = os.environ.get('BT_PARAMS', '')
+    params = json.loads(params_json) if params_json else {}
+    start_date      = params.get('start_date') or None
+    end_date        = params.get('end_date') or None
+    rebalance_type  = params.get('rebalance_type', 'monthly')
+    initial_capital = float(params.get('initial_capital', 1000000))
 
     print(f'Config overrides applied. Rebalance: {rebalance_type}, '
           f'capital: {initial_capital:,.0f}, cash_mode: {config.get("cash_mode")}')
