@@ -123,7 +123,13 @@ const ADV_LABEL = 'ADV $M';
     <div class="card">
       <div class="section-title">Backtest Window</div>
       <div class="field-row">
-        <div class="field"><label>Start date</label><input type="date" id="cfgStartDate" value="2019-01-01"></div>
+        <div class="field">
+          <label>Start date</label>
+          <input type="date" id="cfgStartDate" value="2019-01-01" onchange="checkDateWarning()">
+          <div id="dateWarn" style="font-size:11px;color:var(--yellow);margin-top:4px;display:none">
+            ⚠ SMA200 needs ~10 months of prior data to compute. Early periods will show 0 stocks screened until enough history exists.
+          </div>
+        </div>
         <div class="field"><label>End date</label><input type="date" id="cfgEndDate"></div>
       </div>
       <div class="field">
@@ -242,6 +248,14 @@ function resetRunBtn() {
   btn.disabled = false;
   btn.classList.remove('running');
   document.getElementById('runBtnLabel').textContent = '▶ Run Backtest';
+}
+
+function checkDateWarning() {
+  // Warn if start date is within 10 months of the history store start
+  // (SMA200 needs ~200 trading days = ~10 calendar months of prior data)
+  const warn = document.getElementById('dateWarn');
+  if (!warn) return;
+  warn.style.display = 'block'; // always show this reminder
 }
 
 function gatherConfig() {
@@ -416,6 +430,7 @@ function renderRun(run) {
     &nbsp;·&nbsp; Capital: ${CURRENCY}${Number(run.initial_capital).toLocaleString()}
     &nbsp;·&nbsp; Run at ${new Date(run.triggered_at).toLocaleString()}
   </div>
+  ${(run.snapshots||[]).filter(s=>s.stocks_screened===0).length > 0 ? `<div class="alert" style="background:rgba(245,200,66,.1);border:1px solid rgba(245,200,66,.3);color:var(--yellow)">⚠ ${(run.snapshots||[]).filter(s=>s.stocks_screened===0).length} early periods show 0 stocks screened — SMA200 requires ~10 months of prior history to compute. Re-run history refresh with 7 years, then backtest will have data from the first period.</div>` : ''}
   <div class="stats-grid">
     <div class="stat"><div class="val ${cagrCls}">${fmtPct(stats.cagr)}</div><div class="lbl">CAGR</div></div>
     <div class="stat"><div class="val ${cagrCls}">${fmtPct(stats.total_return)}</div><div class="lbl">Total Return</div></div>
