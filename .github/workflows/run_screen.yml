@@ -25,4 +25,5 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SCREEN_PARAMS: ${{ toJson(github.event.client_payload.params) }}
         run: python screener.py
