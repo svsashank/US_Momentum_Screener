@@ -42,7 +42,8 @@ def build_config():
     params_json = os.environ.get('BT_PARAMS', '')
     if params_json:
         try:
-            params = json.loads(params_json)
+            decoded = json.loads(params_json)
+            params = json.loads(decoded) if isinstance(decoded, str) else decoded
             # Screening parameters
             int_keys = ['portfolio_size', 'sma_short', 'sma_long',
                         'min_stocks_to_invest', 'retention_rank']
@@ -91,8 +92,15 @@ def main():
 
     config = build_config()
 
-    params_json = os.environ.get('BT_PARAMS', '')
-    params = json.loads(params_json) if params_json else {}
+    params_raw = os.environ.get('BT_PARAMS', '')
+    params = {}
+    if params_raw:
+        try:
+            decoded = json.loads(params_raw)
+            # toJson() in workflow may double-encode: decode again if still a string
+            params = json.loads(decoded) if isinstance(decoded, str) else decoded
+        except Exception as e:
+            print(f'⚠ BT_PARAMS parse error: {e}')
     start_date      = params.get('start_date') or None
     end_date        = params.get('end_date') or None
     rebalance_type  = params.get('rebalance_type', 'monthly')
