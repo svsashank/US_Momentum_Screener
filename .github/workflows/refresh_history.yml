@@ -18,5 +18,5 @@ jobs:
       - env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          HISTORY_YEARS: '7'
+          HISTORY_YEARS: '8'
         run: python refresh_history.py
