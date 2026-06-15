@@ -36,7 +36,7 @@ UNIVERSE_FILE = os.path.join(os.path.dirname(__file__), 'sp1500.json')
 # full window each time for simplicity — merge_history() handles dedup, and
 # yfinance fetches for ~1500 tickers over a few years complete within the
 # Actions timeout (see batch performance in live screener runs).
-HISTORY_YEARS = int(os.environ.get('HISTORY_YEARS', '3'))
+HISTORY_YEARS = int(os.environ.get('HISTORY_YEARS', '7'))
 
 
 def main():
