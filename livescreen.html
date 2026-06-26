@@ -53,9 +53,9 @@
   .panel.active { display: block; }
 
   /* ── Tables ── */
-  .tbl-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+  .tbl-wrap { overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 160px); border-radius: 10px; border: 1px solid var(--border); }
   table { width: 100%; border-collapse: collapse; font-size: var(--small); }
-  th { background: var(--surface2); padding: 10px 12px; text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+  th { background: var(--surface2); padding: 10px 12px; text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; position: sticky; top: 0; z-index: 2; }
   td { padding: 9px 12px; border-top: 1px solid var(--border); white-space: nowrap; }
   tr:hover td { background: var(--surface2); }
   .rank { color: var(--muted); font-size: 11px; }
@@ -119,8 +119,9 @@ const GITHUB_REPO  = 'US_Momentum_Screener';
 </div>
 
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('top15',this)">Top 15</div>
+  <div class="tab active" onclick="switchTab('top15',this)" id="tab-top15">Top N</div>
   <div class="tab" onclick="switchTab('passing',this)">All Passing</div>
+  <div class="tab" onclick="switchTab('universe',this)">Full Universe</div>
   <div class="tab" onclick="switchTab('portfolio',this)">Portfolio</div>
   <div class="tab" onclick="switchTab('params',this)">⚙ Parameters</div>
   <div class="tab" onclick="switchTab('delta',this)">Rebalance Delta</div>
@@ -129,6 +130,7 @@ const GITHUB_REPO  = 'US_Momentum_Screener';
 
 <div id="panel-top15"    class="panel active"><div class="empty">Run a screen or wait for data to load…</div></div>
 <div id="panel-passing"  class="panel"><div class="empty">Run a screen to see all passing stocks.</div></div>
+<div id="panel-universe" class="panel"><div class="empty">Run a screen to see the full ranked universe.</div></div>
 <div id="panel-portfolio" class="panel">
   <p class="section-title">Current Holdings</p>
   <div class="crud-row">
@@ -156,6 +158,7 @@ const GITHUB_REPO  = 'US_Momentum_Screener';
         <div class="field"><label>RSI threshold</label><input type="number" id="pRsi" value="50"></div>
         <div class="field"><label>Max volatility</label><input type="number" id="pMaxVol" value="0.75" step="0.05"></div>
         <div class="field"><label>Max % from 52W high</label><input type="number" id="pMaxFromHigh" value="0.25" step="0.05"></div>
+        <div class="field"><label>SMA21 buffer (price ≥ SMA21 × (1−buffer))</label><input type="number" id="pSmaBuffer" value="0.05" step="0.01" min="0" max="0.5"></div>
         <div class="field"><label>CMF threshold</label><input type="number" id="pCmf" value="0.1" step="0.05"></div>
       </div>
       <div>
@@ -199,6 +202,7 @@ function gatherScreenParams() {
     rsi_threshold: document.getElementById('pRsi').value,
     max_volatility: document.getElementById('pMaxVol').value,
     max_from_high: document.getElementById('pMaxFromHigh').value,
+    sma_buffer: document.getElementById('pSmaBuffer').value,
     cmf_threshold: document.getElementById('pCmf').value,
     min_mcap: document.getElementById('pMinMcap').value,
     min_adv: document.getElementById('pMinAdv').value,
@@ -208,7 +212,7 @@ function gatherScreenParams() {
 
 function resetParams() {
   const d = { pPortfolioSize:15, pSmaShort:21, pSmaLong:200, pRsi:50,
-    pMaxVol:0.75, pMaxFromHigh:0.25, pCmf:0.1, pMinMcap:500, pMinAdv:10, pLookback:400 };
+    pMaxVol:0.75, pMaxFromHigh:0.25, pSmaBuffer:0.05, pCmf:0.1, pMinMcap:500, pMinAdv:10, pLookback:400 };
   Object.entries(d).forEach(([id, val]) => { const el = document.getElementById(id); if (el) el.value = val; });
 }
 
@@ -328,22 +332,26 @@ async function loadAll() {
 // ── Top 15 + All Passing + Delta ──────────────────────────────────────────────
 let latestTop15 = [];
 let latestPassing = [];
+let latestUniverse = [];
 let currentPortfolio = [];
 
 async function loadLatestScreen() {
   try {
-    const rows = await sb('screen_runs?select=run_date,top15,all_passing,filters,triggered_at&order=id.desc&limit=1');
+    const rows = await sb('screen_runs?select=run_date,top15,all_passing,all_universe,filters,triggered_at&order=id.desc&limit=1');
     if (!rows || !rows.length) {
-      document.getElementById('panel-top15').innerHTML   = '<div class="empty">No screen runs yet. Click ▶ Run Screen.</div>';
-      document.getElementById('panel-passing').innerHTML = '<div class="empty">No screen runs yet.</div>';
+      document.getElementById('panel-top15').innerHTML    = '<div class="empty">No screen runs yet. Click ▶ Run Screen.</div>';
+      document.getElementById('panel-passing').innerHTML  = '<div class="empty">No screen runs yet.</div>';
+      document.getElementById('panel-universe').innerHTML = '<div class="empty">No screen runs yet.</div>';
       return;
     }
     const run = rows[0];
-    latestTop15   = run.top15   || [];
-    latestPassing = run.all_passing || [];
+    latestTop15    = run.top15        || [];
+    latestPassing  = run.all_passing  || [];
+    latestUniverse = run.all_universe || [];
 
     renderTop15(run.run_date, run.filters);
     renderPassing(run.run_date);
+    renderUniverse(run.run_date, run.filters);
     renderDelta();
   } catch(e) {
     document.getElementById('panel-top15').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
@@ -356,14 +364,18 @@ function fmtNum(v, dec=2) {
 }
 
 function renderTop15(runDate, filters) {
+  const n = filters?.portfolio_size || latestTop15.length || 15;
+  const tabEl = document.getElementById('tab-top15');
+  if (tabEl) tabEl.textContent = `Top ${n}`;
+
   if (!latestTop15.length) {
-    document.getElementById('panel-top15').innerHTML = '<div class="empty">No stocks in top 15.</div>';
+    document.getElementById('panel-top15').innerHTML = '<div class="empty">No stocks in top list.</div>';
     return;
   }
   let html = `<div class="alert info" style="margin-bottom:16px">
     Screen date: <strong>${runDate}</strong> &nbsp;·&nbsp;
     Universe: ${filters?.universe || 'sp1500'} &nbsp;·&nbsp;
-    Top ${filters?.portfolio_size || 15} of ${latestPassing.length} passing
+    Top ${n} of ${latestPassing.length} passing
   </div>
   <div class="tbl-wrap"><table>
   <thead><tr>
@@ -417,6 +429,69 @@ function renderPassing(runDate) {
   });
   html += '</tbody></table></div>';
   document.getElementById('panel-passing').innerHTML = html;
+}
+
+
+function renderUniverse(runDate, filters) {
+  const panel = document.getElementById('panel-universe');
+  if (!latestUniverse.length) {
+    panel.innerHTML = '<div class="empty">Full universe data not available — run a new screen to populate this tab.</div>';
+    return;
+  }
+  const topN = filters?.portfolio_size || 15;
+  const topSet = new Set(latestTop15.map(r => r.ticker));
+  const passingSet = new Set(latestPassing.map(r => r.ticker));
+
+  const sorted = [...latestUniverse].sort((a, b) => (b.rank_score ?? -Infinity) - (a.rank_score ?? -Infinity));
+
+  const filterCols   = ['p_mcap','p_adv','p_vol','p_rsi','p_sma','p_high','p_cmf'];
+  const filterLabels = ['MCap','ADV','Vol','RSI','SMA','52W High','CMF'];
+  const tick  = '<span style="color:var(--green)">✓</span>';
+  const cross = '<span style="color:var(--red)">✗</span>';
+
+  let html = `<div class="alert info" style="margin-bottom:16px">
+    ${sorted.length} stocks with valid data on ${runDate} &nbsp;·&nbsp;
+    <strong>${latestPassing.length}</strong> passed all filters &nbsp;·&nbsp;
+    Top <strong>${topN}</strong> highlighted
+  </div>
+  <div class="tbl-wrap"><table>
+  <thead><tr>
+    <th>#</th><th>Ticker</th><th>Price</th><th>Rank Score</th>
+    <th>RSI</th><th>Vol %</th><th>ADV $M</th><th>CMF</th><th>MCap $M</th><th>% from 52W High</th>
+    ${filterLabels.map(l => `<th>${l}</th>`).join('')}
+  </tr></thead><tbody>`;
+
+  sorted.forEach((r, i) => {
+    const inTopN    = topSet.has(r.ticker);
+    const inPassing = passingSet.has(r.ticker);
+    let rowStyle = '', tickerStyle = '', tickerSuffix = '';
+    if (inTopN) {
+      rowStyle = 'background:rgba(62,207,142,.07);';
+      tickerStyle = 'color:var(--green);';
+      tickerSuffix = ' ★';
+    } else if (inPassing) {
+      rowStyle = 'background:rgba(91,143,255,.05);';
+      tickerStyle = 'color:var(--accent);';
+    }
+    const filterCells = filterCols.map(col =>
+      `<td style="text-align:center">${r[col] ? tick : cross}</td>`
+    ).join('');
+    html += `<tr style="${rowStyle}">
+      <td class="rank">${i + 1}</td>
+      <td class="ticker-cell" style="${tickerStyle}">${r.ticker}${tickerSuffix}</td>
+      <td>$${fmtNum(r.price)}</td>
+      <td>${r.rank_score != null ? fmtNum(r.rank_score, 4) : '—'}</td>
+      <td>${fmtNum(r.rsi, 1)}</td>
+      <td>${fmtNum(r.volatility_pct, 1)}%</td>
+      <td>${fmtNum(r.adv_m, 1)}</td>
+      <td>${fmtNum(r.cmf, 3)}</td>
+      <td>${fmtNum(r.mcap_m, 0)}</td>
+      <td>${fmtNum(r.pct_from_high, 1)}%</td>
+      ${filterCells}
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  panel.innerHTML = html;
 }
 
 function renderDelta() {
