@@ -118,13 +118,14 @@ def clean(val):
 def to_records(df):
     return [{k: clean(v) for k, v in row.items()} for _, row in df.iterrows()]
 
-def push(supabase, top15, all_passing, rejections, screen_date):
+def push(supabase, top15, all_passing, all_universe, rejections, screen_date):
     row = {
-        'run_date'   : str(screen_date.date()),
-        'universe'   : UNIVERSE_NAME,
-        'top15'      : to_records(top15.reset_index())       if not top15.empty       else [],
-        'all_passing': to_records(all_passing.reset_index()) if not all_passing.empty else [],
-        'filters'    : {
+        'run_date'    : str(screen_date.date()),
+        'universe'    : UNIVERSE_NAME,
+        'top15'       : to_records(top15.reset_index())        if not top15.empty        else [],
+        'all_passing' : to_records(all_passing.reset_index())  if not all_passing.empty  else [],
+        'all_universe': to_records(all_universe.reset_index()) if not all_universe.empty else [],
+        'filters'     : {
             'universe': UNIVERSE_NAME, 'portfolio_size': PORTFOLIO_SIZE,
             'min_mcap_usd_m': CONFIG['min_mcap'], 'min_adv_usd_m': CONFIG['min_adv'],
             'max_vol': CONFIG['max_volatility'], 'rsi_threshold': CONFIG['rsi_threshold'],
@@ -133,7 +134,7 @@ def push(supabase, top15, all_passing, rejections, screen_date):
             'cmf_threshold': CONFIG['cmf_threshold'],
             'rejections': rejections,
         },
-        'run_status' : 'complete',
+        'run_status'  : 'complete',
         'triggered_at': datetime.utcnow().isoformat(),
     }
     resp   = supabase.table('screen_runs').insert(row).execute()
@@ -189,10 +190,10 @@ def main():
     ind                  = compute_indicators(raw, mcap, screen_tickers, CONFIG)
 
     print('\n⏳ Running screen...')
-    top15, all_passing, rejections, screen_date = run_screen(ind, CONFIG)
+    top15, all_passing, all_universe, rejections, screen_date = run_screen(ind, CONFIG)
 
     print('\n📤 Pushing to Supabase...')
-    run_id = push(supabase, top15, all_passing, rejections, screen_date)
+    run_id = push(supabase, top15, all_passing, all_universe, rejections, screen_date)
 
     print(f'\n✅ Done in {(time.time()-t0)/60:.1f} min — run_id: {run_id}')
 
