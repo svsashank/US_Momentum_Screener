@@ -14,7 +14,12 @@
   "cmf_period": 20,
   "cmf_threshold": 0.1,
   "lookback_days": 400,
-  "adv_divisor": 1e6,
-  "anchors": ["AAPL", "MSFT", "SPY"],
-  "_comment": "min_mcap and min_adv are in USD millions (mcap_divisor = 1e6). Edit and commit to change screener behavior - no code changes needed."
+  "adv_divisor": 1000000.0,
+  "anchors": [
+    "AAPL",
+    "MSFT",
+    "SPY"
+  ],
+  "_comment": "min_mcap and min_adv are in USD millions (mcap_divisor = 1e6). Edit and commit to change screener behavior - no code changes needed.",
+  "sma_buffer": 0.05
 }
