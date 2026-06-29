@@ -340,8 +340,8 @@ async function triggerRun() {
 
 async function getLatestRunId() {
   try {
-    const rows = await sb('screen_runs?select=id&order=id.desc&limit=1');
-    return rows?.[0]?.id || null;
+    const rows = await sb('screen_runs?select=id,triggered_at&order=triggered_at.desc&limit=1');
+    return rows?.[0]?.triggered_at || null;
   } catch { return null; }
 }
 
@@ -359,7 +359,7 @@ function startPolling() {
       const latestId = await getLatestRunId();
       if (latestId && latestId !== pollLatestId) {
         clearInterval(pollTimer);
-        const rows = await sb('screen_runs?select=run_date&order=id.desc&limit=1');
+        const rows = await sb('screen_runs?select=run_date&order=triggered_at.desc&limit=1');
         const runDate = rows?.[0]?.run_date || 'today';
         setRunStatus(`✅ Screen complete — ${runDate}`, 'ok');
         resetRunBtn();
