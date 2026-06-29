@@ -6,6 +6,7 @@ Uses shared core/ modules (indicators, screener_engine, data_fetcher).
 
 import os, json, time, math, warnings
 import numpy as np
+import pandas as pd
 import yfinance as yf
 from datetime import datetime
 from supabase import create_client
@@ -43,6 +44,7 @@ if _params_raw:
 UNIVERSE_NAME  = CONFIG['universe_name']
 PORTFOLIO_SIZE = CONFIG['portfolio_size']
 LOOKBACK_DAYS  = CONFIG['lookback_days']
+ADV_DIVISOR    = CONFIG['adv_divisor']
 
 UNIVERSE_FILE  = os.path.join(os.path.dirname(__file__), 'sp1500.json')
 
@@ -107,25 +109,35 @@ def fetch_mcap(tickers):
 
 # ── Push to Supabase ──────────────────────────────────────────────────────────
 def clean(val):
+    if val is None:
+        return None
     if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
         return None
     if isinstance(val, np.integer):  return int(val)
     if isinstance(val, np.floating):
         v = float(val)
         return None if (math.isnan(v) or math.isinf(v)) else v
+    # pandas uses float NaN for missing object/string columns
+    try:
+        import pandas as pd
+        if pd.isna(val):
+            return None
+    except (TypeError, ValueError):
+        pass
     return val
 
 def to_records(df):
     return [{k: clean(v) for k, v in row.items()} for _, row in df.iterrows()]
 
-def push(supabase, top15, all_passing, all_universe, rejections, screen_date):
+def push(supabase, top15, all_passing, all_universe, hold_zone, rejections, screen_date):
     row = {
-        'run_date'    : str(screen_date.date()),
-        'universe'    : UNIVERSE_NAME,
-        'top15'       : to_records(top15.reset_index())        if not top15.empty        else [],
-        'all_passing' : to_records(all_passing.reset_index())  if not all_passing.empty  else [],
+        'run_date'   : str(screen_date.date()),
+        'universe'   : UNIVERSE_NAME,
+        'top15'      : to_records(top15.reset_index())       if not top15.empty       else [],
+        'all_passing': to_records(all_passing.reset_index()) if not all_passing.empty else [],
         'all_universe': to_records(all_universe.reset_index()) if not all_universe.empty else [],
-        'filters'     : {
+        'hold_zone'  : to_records(hold_zone.reset_index())   if not hold_zone.empty   else [],
+        'filters'    : {
             'universe': UNIVERSE_NAME, 'portfolio_size': PORTFOLIO_SIZE,
             'min_mcap_usd_m': CONFIG['min_mcap'], 'min_adv_usd_m': CONFIG['min_adv'],
             'max_vol': CONFIG['max_volatility'], 'rsi_threshold': CONFIG['rsi_threshold'],
@@ -134,40 +146,49 @@ def push(supabase, top15, all_passing, all_universe, rejections, screen_date):
             'cmf_threshold': CONFIG['cmf_threshold'],
             'rejections': rejections,
         },
-        'run_status'  : 'complete',
+        'run_status' : 'complete',
         'triggered_at': datetime.utcnow().isoformat(),
     }
     resp   = supabase.table('screen_runs').insert(row).execute()
     run_id = resp.data[0]['id'] if resp.data else None
     print(f'✅ screen_runs → id: {run_id}')
 
-    if not all_passing.empty:
+    # Upsert stock_snapshots for all_passing (strict) + near-miss promoted stocks
+    # top15 may contain near-miss rows not in all_passing — handle both sets
+    if not top15.empty or not all_passing.empty:
         top_set     = set(top15['ticker']) if not top15.empty else set()
         top_idx_map = {r['ticker']: int(i) for i, r in top15.reset_index().iterrows()}
+
+        # Merge: strict passes + any near-miss promoted stocks from top15
+        nm_in_top15 = top15[top15.get('is_near_miss', False) == True] if not top15.empty else pd.DataFrame()
+        combined    = pd.concat([all_passing, nm_in_top15]).drop_duplicates(subset='ticker') if not all_passing.empty else nm_in_top15
+
         rows = []
-        for _, r in all_passing.iterrows():
+        for _, r in combined.iterrows():
             t = r['ticker']
             rows.append({
-                'ticker'    : t,
-                'price'     : clean(r['price']),
-                'sma21'     : clean(r['sma21']),
-                'sma200'    : clean(r['sma200']),
-                'rank_score': clean(r['rank_score']),
-                'rsi14'     : clean(r['rsi']),
-                'adv20'     : clean(r['adv_m']),
-                'ann_vol'   : clean(r['volatility_pct']),
-                'cmf'       : clean(r['cmf']),
-                'high52w'   : clean(r['price'] / (1 + r['pct_from_high']/100)) if r['pct_from_high'] is not None else None,
-                'passes_all': True,
-                'in_top15'  : t in top_set,
-                'top15_rank': top_idx_map.get(t),
-                'updated_at': datetime.utcnow().isoformat(),
+                'ticker'        : t,
+                'price'         : clean(r['price']),
+                'sma21'         : clean(r['sma21']),
+                'sma200'        : clean(r['sma200']),
+                'rank_score'    : clean(r['rank_score']),
+                'rsi14'         : clean(r['rsi']),
+                'adv20'         : clean(r['adv_m']),
+                'ann_vol'       : clean(r['volatility_pct']),
+                'cmf'           : clean(r['cmf']),
+                'high52w'       : clean(r['price'] / (1 + r['pct_from_high']/100)) if r['pct_from_high'] is not None else None,
+                'passes_all'    : bool(r.get('passes_all', False)),
+                'in_top15'      : t in top_set,
+                'top15_rank'    : top_idx_map.get(t),
+                'is_near_miss'  : bool(r.get('is_near_miss', False)),
+                'near_miss_filter': r.get('near_miss_filter') if r.get('near_miss_filter') and str(r.get('near_miss_filter')) != 'nan' else None,
+                'updated_at'    : datetime.utcnow().isoformat(),
             })
         total = 0
         for i in range(0, len(rows), 200):
             supabase.table('stock_snapshots').upsert(rows[i:i+200], on_conflict='ticker').execute()
             total += min(200, len(rows) - i)
-        print(f'✅ stock_snapshots → {total} upserted')
+        print(f'✅ stock_snapshots → {total} upserted ({len(all_passing)} strict + {len(nm_in_top15)} near-miss promoted)')
 
     return run_id
 
@@ -190,10 +211,10 @@ def main():
     ind                  = compute_indicators(raw, mcap, screen_tickers, CONFIG)
 
     print('\n⏳ Running screen...')
-    top15, all_passing, all_universe, rejections, screen_date = run_screen(ind, CONFIG)
+    top15, all_passing, all_universe, hold_zone, rejections, screen_date = run_screen(ind, CONFIG)
 
     print('\n📤 Pushing to Supabase...')
-    run_id = push(supabase, top15, all_passing, all_universe, rejections, screen_date)
+    run_id = push(supabase, top15, all_passing, all_universe, hold_zone, rejections, screen_date)
 
     print(f'\n✅ Done in {(time.time()-t0)/60:.1f} min — run_id: {run_id}')
 
