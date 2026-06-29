@@ -359,7 +359,7 @@ function startPolling() {
       const latestId = await getLatestRunId();
       if (latestId && latestId !== pollLatestId) {
         clearInterval(pollTimer);
-        const rows = await sb('screen_runs?select=run_date&order=triggered_at.desc&limit=1');
+        const rows = await sb('screen_runs?select=run_date&order=run_date.desc,triggered_at.desc.nullslast&limit=1');
         const runDate = rows?.[0]?.run_date || 'today';
         setRunStatus(`✅ Screen complete — ${runDate}`, 'ok');
         resetRunBtn();
@@ -404,7 +404,7 @@ let currentPortfolio = [];
 async function loadLatestScreen() {
   try {
     // Fetch core data — top15 + all_passing + hold_zone in isolation from all_universe
-    const rows = await sb('screen_runs?select=id,run_date,top15,all_passing,filters,triggered_at&order=triggered_at.desc&limit=1');
+    const rows = await sb('screen_runs?select=id,run_date,top15,all_passing,filters,triggered_at&order=run_date.desc,triggered_at.desc.nullslast&limit=1');
     if (!rows || !rows.length) {
       document.getElementById('panel-top15').innerHTML    = '<div class="empty">No screen runs yet. Click ▶ Run Screen.</div>';
       document.getElementById('panel-passing').innerHTML  = '<div class="empty">No screen runs yet.</div>';
@@ -914,7 +914,7 @@ async function importPortfolioCSV(input) {
 // ── Run History ───────────────────────────────────────────────────────────────
 async function loadHistory() {
   try {
-    const rows = await sb('screen_runs?select=id,run_date,universe,filters,triggered_at&order=triggered_at.desc&limit=20') || [];
+    const rows = await sb('screen_runs?select=id,run_date,universe,filters,triggered_at&order=run_date.desc,triggered_at.desc.nullslast&limit=20') || [];
     if (!rows.length) {
       document.getElementById('panel-history').innerHTML = '<div class="empty">No screen runs yet.</div>';
       return;
