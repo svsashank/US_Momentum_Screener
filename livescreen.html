@@ -84,6 +84,10 @@
 
   /* ── Misc ── */
   .empty { color: var(--muted); padding: 32px; text-align: center; }
+  .scr-field { display:flex;flex-direction:column;gap:4px; }
+  .scr-field label { font-size:11px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.4px; }
+  .scr-field input { padding:7px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;width:100%;box-sizing:border-box; }
+  .scr-field input::placeholder { color:var(--muted); }
   .section-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; }
   .alert { padding: 12px 16px; border-radius: 8px; font-size: var(--small); margin-bottom: 16px; }
   .alert.info { background: rgba(91,143,255,.1); border: 1px solid rgba(91,143,255,.3); color: var(--accent); }
@@ -94,10 +98,22 @@
 
 <!-- ── Config: paste your Supabase anon key here ──────────────────────────── -->
 <script>
+// Debug toast — only shows when URL contains ?debug
+const DEBUG = location.search.includes('debug');
+function dbg(msg) {
+  if (!DEBUG) return;
+  const t = document.createElement('div');
+  t.textContent = '⚠ ' + msg;
+  t.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1e293b;color:#f87171;font-size:11px;padding:8px 14px;border-radius:8px;border:1px solid #f87171;z-index:9999;max-width:90vw;word-break:break-all';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 10000);
+}
+
 const SUPABASE_URL = 'https://vttlxtkmhhyuscokznve.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ0dGx4dGttaGh5dXNjb2t6bnZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5Nzg3MDMsImV4cCI6MjA5NjU1NDcwM30.aUQwDbgKAM0oQea27iWnFvik0i53QUZrTTLg-nKioRY';
 const GITHUB_OWNER = 'svsashank';
 const GITHUB_REPO  = 'US_Momentum_Screener';
+
 </script>
 <!-- ─────────────────────────────────────────────────────────────────────────── -->
 
@@ -126,6 +142,7 @@ const GITHUB_REPO  = 'US_Momentum_Screener';
   <div class="tab" onclick="switchTab('params',this)">⚙ Parameters</div>
   <div class="tab" onclick="switchTab('delta',this)">Rebalance Delta</div>
   <div class="tab" onclick="switchTab('history',this)">Run History</div>
+  <div class="tab" onclick="switchTab('screener',this)">🔍 Screener</div>
 </div>
 
 <div id="panel-top15"    class="panel active"><div class="empty">Run a screen or wait for data to load…</div></div>
@@ -138,16 +155,66 @@ const GITHUB_REPO  = 'US_Momentum_Screener';
     <input id="addShares" placeholder="Shares" type="number">
     <input id="addCost"   placeholder="Avg cost $" type="number" step="0.01">
     <button class="btn-sm" onclick="addHolding()">+ Add</button>
+    <button class="btn-sm" onclick="document.getElementById('csvImportInput').click()" title="Import from broker CSV export">📥 Import CSV</button>
+    <input type="file" id="csvImportInput" accept=".csv" style="display:none" onchange="importPortfolioCSV(this)">
   </div>
   <div id="portfolioTable"><div class="empty">Loading portfolio…</div></div>
 </div>
 <div id="panel-delta"   class="panel"><div class="empty">Run a screen to see rebalance delta.</div></div>
 <div id="panel-history" class="panel"><div class="empty">Loading run history…</div></div>
 
+<div id="panel-screener" class="panel">
+  <!-- Header bar with date stamp -->
+  <div id="scr-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+    <div>
+      <span style="font-weight:600;font-size:15px;">Stock Screener</span>
+      <span id="scr-date-badge" style="margin-left:10px;padding:2px 10px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);font-size:11px;color:var(--muted);"></span>
+    </div>
+    <span style="font-size:11px;color:var(--muted);">Data from last screen run · re-run screen to refresh</span>
+  </div>
+
+  <!-- Filter controls -->
+  <div id="scr-controls" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;margin-bottom:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <span style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Filters</span>
+      <div style="display:flex;gap:8px;">
+        <button onclick="resetScreener()" style="padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);font-size:12px;cursor:pointer;">Reset</button>
+        <button onclick="applyScreener()" style="padding:5px 14px;border-radius:6px;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Apply</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:10px;">
+      <div class="scr-field"><label>Price $ — min</label><input type="number" id="sf-price-min" placeholder="e.g. 5"></div>
+      <div class="scr-field"><label>Price $ — max</label><input type="number" id="sf-price-max" placeholder="e.g. 1000"></div>
+      <div class="scr-field"><label>MCap $M — min</label><input type="number" id="sf-mcap-min" placeholder="e.g. 500"></div>
+      <div class="scr-field"><label>MCap $M — max</label><input type="number" id="sf-mcap-max" placeholder="e.g. 500000"></div>
+      <div class="scr-field"><label>ADV $M — min</label><input type="number" id="sf-adv-min" placeholder="e.g. 10"></div>
+      <div class="scr-field"><label>RSI — min</label><input type="number" id="sf-rsi-min" placeholder="e.g. 50" min="0" max="100"></div>
+      <div class="scr-field"><label>RSI — max</label><input type="number" id="sf-rsi-max" placeholder="e.g. 80" min="0" max="100"></div>
+      <div class="scr-field"><label>Volatility % — max</label><input type="number" id="sf-vol-max" placeholder="e.g. 75"></div>
+      <div class="scr-field"><label>CMF — min</label><input type="number" id="sf-cmf-min" placeholder="e.g. 0.1" step="0.05"></div>
+      <div class="scr-field"><label>% from 52W High — max loss</label><input type="number" id="sf-high-max" placeholder="e.g. 25" min="0" max="100"></div>
+      <div class="scr-field"><label>Rank Score — min</label><input type="number" id="sf-rank-min" placeholder="e.g. 1.0" step="0.1"></div>
+      <div class="scr-field">
+        <label>Momentum status</label>
+        <select id="sf-passes-all" style="padding:7px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;">
+          <option value="">Any</option>
+          <option value="all">✓ Passes all filters</option>
+          <option value="near">⚡ Near miss (fails exactly 1)</option>
+          <option value="none">✗ Fails 2+ filters</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div id="scr-summary" style="font-size:12px;color:var(--muted);margin-bottom:8px;display:flex;gap:16px;"></div>
+  <div id="scr-table"><div class="empty">Run a screen first, then use filters above.</div></div>
+</div>
+
+
 <div id="panel-params" class="panel">
   <div style="max-width:700px">
     <div class="alert info" style="margin-bottom:20px">
-      Changes here apply to the <em>next</em> run only — they override config.json for that run but don't save permanently. To change defaults, edit config.json and commit.
+      Changes here apply to the <em>next</em> run only — they override config.json for that run but don't save permanently.
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div>
@@ -188,7 +255,7 @@ async function sb(path, opts={}) {
     },
     ...opts
   });
-  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
+  if (!r.ok) { const msg = `Supabase ${r.status}: ${await r.text()}`; dbg(msg); throw new Error(msg); }
   const txt = await r.text();
   return txt ? JSON.parse(txt) : null;
 }
@@ -263,7 +330,6 @@ async function triggerRun() {
       throw new Error(`GitHub API ${r.status}: ${txt}`);
     }
     setRunStatus('✓ Triggered! Waiting for results (2–5 min)…', '');
-    // Remember most recent run date before this trigger
     pollLatestId = await getLatestRunId();
     startPolling();
   } catch(e) {
@@ -292,7 +358,6 @@ function startPolling() {
     try {
       const latestId = await getLatestRunId();
       if (latestId && latestId !== pollLatestId) {
-        // New run row appeared
         clearInterval(pollTimer);
         const rows = await sb('screen_runs?select=run_date&order=id.desc&limit=1');
         const runDate = rows?.[0]?.run_date || 'today';
@@ -332,12 +397,14 @@ async function loadAll() {
 // ── Top 15 + All Passing + Delta ──────────────────────────────────────────────
 let latestTop15 = [];
 let latestPassing = [];
+let latestHoldZone = [];
 let latestUniverse = [];
 let currentPortfolio = [];
 
 async function loadLatestScreen() {
   try {
-    const rows = await sb('screen_runs?select=run_date,top15,all_passing,all_universe,filters,triggered_at&order=id.desc&limit=1');
+    // Fetch core data — top15 + all_passing + hold_zone in isolation from all_universe
+    const rows = await sb('screen_runs?select=id,run_date,top15,all_passing,hold_zone,filters,triggered_at&order=id.desc&limit=1');
     if (!rows || !rows.length) {
       document.getElementById('panel-top15').innerHTML    = '<div class="empty">No screen runs yet. Click ▶ Run Screen.</div>';
       document.getElementById('panel-passing').innerHTML  = '<div class="empty">No screen runs yet.</div>';
@@ -345,16 +412,41 @@ async function loadLatestScreen() {
       return;
     }
     const run = rows[0];
-    latestTop15    = run.top15        || [];
-    latestPassing  = run.all_passing  || [];
-    latestUniverse = run.all_universe || [];
+    latestTop15    = run.top15       || [];
+    latestPassing  = run.all_passing || [];
+    latestHoldZone = run.hold_zone   || [];
+    scrScreenDate  = run.run_date    || '';
 
     renderTop15(run.run_date, run.filters);
     renderPassing(run.run_date);
-    renderUniverse(run.run_date, run.filters);
     renderDelta();
+
+    // Fetch all_universe separately — cache in sessionStorage keyed by run id
+    try {
+      const cacheKey = 'all_universe_' + run.id;
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        latestUniverse = JSON.parse(cached);
+        console.log('all_universe: loaded from cache (run ' + run.id + ')');
+      } else {
+        const uRows = await sb('screen_runs?select=all_universe&id=eq.' + run.id);
+        latestUniverse = (uRows && uRows[0] && uRows[0].all_universe) || [];
+        if (latestUniverse.length) {
+          Object.keys(sessionStorage)
+            .filter(k => k.startsWith('all_universe_') && k !== cacheKey)
+            .forEach(k => sessionStorage.removeItem(k));
+          sessionStorage.setItem(cacheKey, JSON.stringify(latestUniverse));
+          console.log('all_universe: fetched and cached (run ' + run.id + ', ' + latestUniverse.length + ' rows)');
+        }
+      }
+    } catch(_) {
+      latestUniverse = [];
+    }
+    renderUniverse(run.run_date, run.filters);
+
   } catch(e) {
-    document.getElementById('panel-top15').innerHTML = `<div class="empty">Error: ${e.message}</div>`;
+    dbg('loadLatestScreen: ' + e.message);
+    document.getElementById('panel-top15').innerHTML = '<div class="empty">Error loading data: ' + e.message + '</div>';
   }
 }
 
@@ -384,9 +476,15 @@ function renderTop15(runDate, filters) {
   </tr></thead><tbody>`;
 
   latestTop15.forEach((r, i) => {
-    html += `<tr>
+    const isNM   = r.is_near_miss;
+    const nmFilter = r.near_miss_filter ? r.near_miss_filter.toUpperCase() : '';
+    const rowStyle = isNM ? 'background:rgba(245,180,0,.07);' : '';
+    const nmBadge  = isNM
+      ? `<span title="Near-miss: ${nmFilter} within 10% of threshold" style="margin-left:6px;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(245,180,0,.2);color:#f5b800;">~${nmFilter}</span>`
+      : '';
+    html += `<tr style="${rowStyle}">
       <td class="rank">${r.index ?? i+1}</td>
-      <td class="ticker-cell">${r.ticker}</td>
+      <td class="ticker-cell">${r.ticker}${nmBadge}</td>
       <td>$${fmtNum(r.price)}</td>
       <td>${fmtNum(r.rank_score, 4)}</td>
       <td>${fmtNum(r.rsi, 1)}</td>
@@ -431,7 +529,6 @@ function renderPassing(runDate) {
   document.getElementById('panel-passing').innerHTML = html;
 }
 
-
 function renderUniverse(runDate, filters) {
   const panel = document.getElementById('panel-universe');
   if (!latestUniverse.length) {
@@ -444,9 +541,10 @@ function renderUniverse(runDate, filters) {
 
   const sorted = [...latestUniverse].sort((a, b) => (b.rank_score ?? -Infinity) - (a.rank_score ?? -Infinity));
 
-  const filterCols   = ['p_mcap','p_adv','p_vol','p_rsi','p_sma','p_high','p_cmf'];
+  const filterCols = ['p_mcap','p_adv','p_vol','p_rsi','p_sma','p_high','p_cmf'];
   const filterLabels = ['MCap','ADV','Vol','RSI','SMA','52W High','CMF'];
-  const tick  = '<span style="color:var(--green)">✓</span>';
+
+  const tick = '<span style="color:var(--green)">✓</span>';
   const cross = '<span style="color:var(--red)">✗</span>';
 
   let html = `<div class="alert info" style="margin-bottom:16px">
@@ -473,9 +571,11 @@ function renderUniverse(runDate, filters) {
       rowStyle = 'background:rgba(91,143,255,.05);';
       tickerStyle = 'color:var(--accent);';
     }
+
     const filterCells = filterCols.map(col =>
       `<td style="text-align:center">${r[col] ? tick : cross}</td>`
     ).join('');
+
     html += `<tr style="${rowStyle}">
       <td class="rank">${i + 1}</td>
       <td class="ticker-cell" style="${tickerStyle}">${r.ticker}${tickerSuffix}</td>
@@ -494,44 +594,210 @@ function renderUniverse(runDate, filters) {
   panel.innerHTML = html;
 }
 
+// ── Rebalance Delta ───────────────────────────────────────────────────────────
+let rebalState = null;
+
 function renderDelta() {
   if (!latestTop15.length) {
     document.getElementById('panel-delta').innerHTML = '<div class="empty">Run a screen first.</div>';
     return;
   }
-  const target  = new Set(latestTop15.map(r => r.ticker));
-  const current = new Set(currentPortfolio.map(r => r.ticker));
+  if (!currentPortfolio.length) {
+    document.getElementById('panel-delta').innerHTML = '<div class="empty">No portfolio holdings — import or add holdings first.</div>';
+    return;
+  }
 
-  const buy  = [...target].filter(t => !current.has(t));
-  const sell = [...current].filter(t => !target.has(t));
-  const hold = [...target].filter(t =>  current.has(t));
+  const norm = t => t.toUpperCase();
 
-  const section = (label, tickers, cls) => {
-    if (!tickers.length) return '';
-    const rows = tickers.map(t => {
-      const snap = latestTop15.find(r => r.ticker === t);
-      return `<tr>
-        <td><span class="badge ${cls}">${label}</span></td>
-        <td class="ticker-cell">${t}</td>
-        <td>${snap ? '$'+fmtNum(snap.price) : '—'}</td>
-        <td>${snap ? fmtNum(snap.rank_score,4) : '—'}</td>
-      </tr>`;
-    }).join('');
-    return rows;
+  const priceMap = {};
+  latestUniverse.forEach(r => { priceMap[norm(r.ticker)] = r.price; });
+  latestTop15.forEach(r => { priceMap[norm(r.ticker)] = r.price; });
+  latestPassing.forEach(r => { priceMap[norm(r.ticker)] = r.price; });
+
+  const rankMap = {};
+  latestUniverse.forEach(r => { rankMap[norm(r.ticker)] = r.rank_score; });
+
+  const holdZoneSet = new Set(
+    (latestHoldZone.length ? latestHoldZone : latestTop15).map(r => norm(r.ticker))
+  );
+  const top15Set = new Set(latestTop15.map(r => norm(r.ticker)));
+
+  const portfolioMap = {};
+  currentPortfolio.forEach(r => { portfolioMap[norm(r.ticker)] = r; });
+
+  const initialBuys  = latestTop15.map(r => norm(r.ticker)).filter(t => !portfolioMap[t]);
+  const initialHolds = Object.keys(portfolioMap).filter(t => holdZoneSet.has(t));
+  const initialSells = Object.keys(portfolioMap).filter(t => !holdZoneSet.has(t));
+
+  if (!rebalState || rebalState.runId !== (latestTop15[0]?.ticker + latestTop15.length)) {
+    rebalState = {
+      runId: latestTop15[0]?.ticker + latestTop15.length,
+      actions: {},
+      buyList: [...initialBuys],
+      phase: 1
+    };
+    initialBuys.forEach(t  => { rebalState.actions[t] = 'buy'; });
+    initialHolds.forEach(t => { rebalState.actions[t] = 'hold'; });
+    initialSells.forEach(t => { rebalState.actions[t] = 'sell'; });
+  }
+
+  renderDeltaPhase1();
+}
+
+function toggleAction(ticker) {
+  const n = ticker.toUpperCase();
+  const a = rebalState.actions[n];
+  const countSlots = () => Object.values(rebalState.actions).filter(v => v === 'hold' || v === 'buy').length;
+
+  if (a === 'sell') {
+    rebalState.actions[n] = 'hold';
+    if (countSlots() > 15) {
+      const activeBuys = rebalState.buyList.filter(t => rebalState.actions[t] === 'buy');
+      if (activeBuys.length) {
+        const lowestBuy = activeBuys[activeBuys.length - 1];
+        rebalState.actions[lowestBuy] = 'skip';
+        rebalState.buyList = rebalState.buyList.filter(t => t !== lowestBuy);
+      }
+    }
+  } else if (a === 'hold') {
+    rebalState.actions[n] = 'sell';
+    if (countSlots() < 15) {
+      const allInState = new Set(Object.keys(rebalState.actions));
+      const next = latestUniverse.find(r => {
+        const rn = r.ticker.toUpperCase();
+        return !allInState.has(rn) && (r.passes_all || r.is_near_miss);
+      });
+      if (next) {
+        const nn = next.ticker.toUpperCase();
+        rebalState.actions[nn] = 'buy';
+        rebalState.buyList.push(nn);
+      }
+    }
+  } else if (a === 'buy') {
+    rebalState.actions[n] = 'skip';
+    const allInState = new Set(Object.keys(rebalState.actions));
+    const next = latestUniverse.find(r => {
+      const rn = r.ticker.toUpperCase();
+      return !allInState.has(rn) && (r.passes_all || r.is_near_miss);
+    });
+    if (next) {
+      const nn = next.ticker.toUpperCase();
+      rebalState.actions[nn] = 'buy';
+      rebalState.buyList = rebalState.buyList.map(t => t === n ? nn : t);
+    } else {
+      rebalState.buyList = rebalState.buyList.filter(t => t !== n);
+    }
+  }
+  renderDeltaPhase1();
+}
+
+function renderDeltaPhase1() {
+  const norm = t => t.toUpperCase();
+
+  const priceMap = {};
+  latestUniverse.forEach(r => { priceMap[norm(r.ticker)] = r.price; });
+  latestTop15.forEach(r => { priceMap[norm(r.ticker)] = r.price; });
+  latestPassing.forEach(r => { priceMap[norm(r.ticker)] = r.price; });
+  const rankMap = {};
+  latestUniverse.forEach(r => { rankMap[norm(r.ticker)] = r.rank_score; });
+
+  const portfolioMap = {};
+  currentPortfolio.forEach(r => { portfolioMap[norm(r.ticker)] = r; });
+
+  let cashPool = 0;
+  Object.entries(rebalState.actions).forEach(([t, action]) => {
+    if (action === 'sell') {
+      const port = portfolioMap[t];
+      const price = priceMap[t] ?? 0;
+      cashPool += (port?.shares ?? 0) * price;
+    }
+  });
+
+  const activeBuys = Object.entries(rebalState.actions)
+    .filter(([,v]) => v === 'buy').map(([k]) => k);
+  const perBuyValue = activeBuys.length ? cashPool / activeBuys.length : 0;
+
+  const allSnap = {};
+  [...latestTop15, ...latestPassing].forEach(r => { allSnap[norm(r.ticker)] = r; });
+  const totalCurrVal = currentPortfolio.reduce((sum, r) => {
+    const n = norm(r.ticker);
+    const p = priceMap[n] ?? r.avg_cost ?? 0;
+    return sum + (p * (r.shares ?? 0));
+  }, 0);
+  const totalCostVal = currentPortfolio.reduce((sum, r) =>
+    sum + ((r.avg_cost ?? 0) * (r.shares ?? 0)), 0);
+  const totalPnl = totalCurrVal - totalCostVal;
+  const totalPnlPct = totalCostVal ? (totalPnl / totalCostVal * 100) : 0;
+  const pnlColor = totalPnl >= 0 ? 'var(--green)' : 'var(--red)';
+
+  const buys  = Object.entries(rebalState.actions).filter(([,v]) => v === 'buy').map(([k]) => k);
+  const holds = Object.entries(rebalState.actions).filter(([,v]) => v === 'hold').map(([k]) => k);
+  const sells = Object.entries(rebalState.actions).filter(([,v]) => v === 'sell').map(([k]) => k);
+
+  const actionBadge = (t, action) => {
+    const colors = { buy: 'var(--green)', hold: 'var(--accent)', sell: 'var(--red)', skip: 'var(--muted)' };
+    const next = { sell: 'hold', hold: 'sell', buy: 'skip→next', skip: '' };
+    const tip = next[action] ? `Click to → ${next[action]}` : '';
+    return `<span class="badge ${action}" style="cursor:pointer;user-select:none" onclick="toggleAction('${t}')" title="${tip}">${action}</span>`;
   };
 
-  let html = `<div class="alert info" style="margin-bottom:16px">
-    Buy: <strong>${buy.length}</strong> &nbsp;·&nbsp;
-    Sell: <strong>${sell.length}</strong> &nbsp;·&nbsp;
-    Hold: <strong>${hold.length}</strong>
+  const row = (t, action) => {
+    const port  = portfolioMap[t];
+    const price = priceMap[t] ?? null;
+    const snap  = allSnap[t];
+    const displayTicker = snap?.ticker ?? port?.ticker ?? t;
+    const shares   = port?.shares ?? null;
+    const avgCost  = port?.avg_cost ?? null;
+    const currVal  = price && shares ? price * shares : null;
+    const costVal  = avgCost && shares ? avgCost * shares : null;
+    const pnl      = currVal && costVal ? currVal - costVal : null;
+    const pnlPct   = pnl && costVal ? pnl / costVal * 100 : null;
+    const pnlStyle = pnl === null ? '' : pnl >= 0 ? 'color:var(--green)' : 'color:var(--red)';
+    const rank     = rankMap[t] ?? snap?.rank_score ?? null;
+    const estQty   = action === 'buy' && price ? Math.round(perBuyValue / price) : null;
+    const estVal   = estQty && price ? estQty * price : null;
+
+    return `<tr>
+      <td>${actionBadge(t, action)}</td>
+      <td class="ticker-cell">${displayTicker}</td>
+      <td>${price !== null ? '$'+fmtNum(price) : '—'}</td>
+      <td>${rank !== null ? fmtNum(rank,4) : '—'}</td>
+      <td>${shares ?? '—'}</td>
+      <td>${avgCost ? '$'+fmtNum(avgCost) : '—'}</td>
+      <td>${currVal ? '$'+fmtNum(currVal,0) : (estVal ? '<span style="color:var(--muted)">~$'+fmtNum(estVal,0)+'</span>' : '—')}</td>
+      <td>${pnl !== null ? `<span style="${pnlStyle}">${pnl>=0?'+':''}$${fmtNum(Math.abs(pnl),0)} (${pnlPct>=0?'+':''}${fmtNum(pnlPct,1)}%)</span>` : '—'}</td>
+    </tr>`;
+  };
+
+  let html = `
+  <div class="alert info" style="margin-bottom:12px;display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+    <span>
+      <strong style="color:var(--green)">${buys.length} Buy</strong> &nbsp;·&nbsp;
+      <strong style="color:var(--accent)">${holds.length} Hold</strong> &nbsp;·&nbsp;
+      <strong style="color:var(--red)">${sells.length} Sell</strong>
+    </span>
+    <span style="font-size:12px;color:var(--muted)">
+      Cash pool (sells): <strong style="color:var(--text)">$${fmtNum(cashPool,0)}</strong>
+      &nbsp;·&nbsp; Per buy: <strong style="color:var(--text)">$${fmtNum(perBuyValue,0)}</strong>
+    </span>
+    <span style="margin-left:auto;font-size:12px;color:var(--muted)">
+      Portfolio: <strong style="color:var(--text)">$${fmtNum(totalCurrVal,0)}</strong>
+      &nbsp;·&nbsp; P&amp;L: <strong style="color:${pnlColor}">${totalPnl>=0?'+':''}$${fmtNum(Math.abs(totalPnl),0)} (${totalPnlPct>=0?'+':''}${fmtNum(totalPnlPct,1)}%)</strong>
+    </span>
   </div>
-  <div class="tbl-wrap"><table>
-  <thead><tr><th>Action</th><th>Ticker</th><th>Price</th><th>Rank Score</th></tr></thead>
-  <tbody>
-  ${section('buy',  buy,  'buy')}
-  ${section('hold', hold, 'hold')}
-  ${section('sell', sell, 'sell')}
-  </tbody></table></div>`;
+  <div class="tbl-wrap" style="max-height:calc(100vh - 280px)"><table>
+  <thead><tr>
+    <th>Action <span style="font-size:10px;color:var(--muted)">(click to toggle)</span></th>
+    <th>Ticker</th><th>Price</th><th>Rank</th>
+    <th>Shares</th><th>Avg Cost</th><th>Value / Est. Buy</th><th>P&amp;L</th>
+  </tr></thead><tbody>
+  ${buys.map(t => row(t, 'buy')).join('')}
+  ${holds.map(t => row(t, 'hold')).join('')}
+  ${sells.map(t => row(t, 'sell')).join('')}
+  </tbody></table></div>
+  <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
+    <button class="btn-sm" onclick="rebalState=null;renderDelta()" style="color:var(--muted)">↺ Reset</button>
+  </div>`;
 
   document.getElementById('panel-delta').innerHTML = html;
 }
@@ -575,7 +841,7 @@ async function addHolding() {
     await sb('portfolio', {
       method: 'POST',
       prefer: 'return=minimal',
-      body: JSON.stringify({ ticker, shares, avg_cost: cost, updated_at: new Date().toISOString() })
+      body: JSON.stringify({ ticker, shares, avg_cost: cost })
     });
     document.getElementById('addTicker').value = '';
     document.getElementById('addShares').value = '';
@@ -592,6 +858,59 @@ async function deleteHolding(ticker) {
   } catch(e) { alert(`Error: ${e.message}`); }
 }
 
+async function importPortfolioCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+
+  const text = await file.text();
+  const lines = text.split(/\r?\n/);
+
+  let headerIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/ticker/i.test(lines[i])) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) {
+    alert('Could not find a "Ticker" column in this CSV. Please check the file format.');
+    return;
+  }
+
+  const headers = lines[headerIdx].split(',').map(h => h.trim().toLowerCase());
+  const colTicker = headers.findIndex(h => h === 'ticker');
+  const colShares = headers.findIndex(h => h === 'shares');
+  const colAvgBuy = headers.findIndex(h => h.includes('avg buy') || h.includes('avg cost'));
+
+  if (colTicker === -1) { alert('Ticker column not found.'); return; }
+
+  const holdings = [];
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const row = lines[i].split(',').map(c => c.trim());
+    if (!row[colTicker] || row[colTicker] === '') continue;
+    const ticker   = row[colTicker].toUpperCase();
+    const shares   = colShares  !== -1 ? parseFloat(row[colShares])  || null : null;
+    const avg_cost = colAvgBuy  !== -1 ? parseFloat(row[colAvgBuy])  || null : null;
+    if (ticker) holdings.push({ ticker, shares, avg_cost });
+  }
+
+  if (!holdings.length) { alert('No valid holdings found in the CSV.'); return; }
+
+  const msg = `Import ${holdings.length} holdings?\n\nThis will REPLACE your entire portfolio.\n\nTickers: ${holdings.map(h=>h.ticker).join(', ')}`;
+  if (!confirm(msg)) return;
+
+  try {
+    await sb('portfolio?ticker=like.*', { method: 'DELETE' });
+    for (let i = 0; i < holdings.length; i += 50) {
+      await sb('portfolio', {
+        method: 'POST',
+        prefer: 'return=minimal',
+        body: JSON.stringify(holdings.slice(i, i + 50))
+      });
+    }
+    await loadPortfolio();
+    alert(`✅ Imported ${holdings.length} holdings successfully.`);
+  } catch(e) { alert(`Import failed: ${e.message}`); }
+}
+
 // ── Run History ───────────────────────────────────────────────────────────────
 async function loadHistory() {
   try {
@@ -602,7 +921,6 @@ async function loadHistory() {
     }
     let html = rows.map(r => {
       const f = r.filters || {};
-      const passing = (f.rejections ? Object.values(f.rejections).reduce((a,b)=>a+b,0) : '?');
       const date = new Date(r.created_at).toLocaleString();
       return `<div class="run-card">
         <div>
@@ -610,8 +928,8 @@ async function loadHistory() {
           <div class="run-meta">${r.universe} · run at ${date}</div>
         </div>
         <div class="run-meta">
-          MCap &gt; $${(f.min_mcap_usd||0)/1e6}M &nbsp;·&nbsp;
-          ADV &gt; $${(f.min_adv_usd||0)/1e6}M &nbsp;·&nbsp;
+          MCap &gt; $${f.min_mcap_usd_m ?? '—'}M &nbsp;·&nbsp;
+          ADV &gt; $${f.min_adv_usd_m ?? '—'}M &nbsp;·&nbsp;
           Vol &lt; ${(f.max_vol||0)*100}% &nbsp;·&nbsp;
           CMF &gt; ${f.cmf_threshold ?? '—'}
         </div>
@@ -625,6 +943,187 @@ async function loadHistory() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 loadAll();
+
+// ── Screener tab ──────────────────────────────────────────────────────────────
+let scrSortCol = 'rank_score';
+let scrSortAsc = false;
+let scrScreenDate = '';
+
+function val(id) {
+  const v = document.getElementById(id)?.value;
+  return v === '' || v === null || v === undefined ? null : parseFloat(v);
+}
+
+function countFailures(r) {
+  return [r.p_mcap, r.p_adv, r.p_vol, r.p_rsi, r.p_sma, r.p_high, r.p_cmf]
+    .filter(v => v === false || v === 0).length;
+}
+
+function applyScreener() {
+  if (!latestUniverse.length) {
+    document.getElementById('scr-table').innerHTML = '<div class="empty">No universe data — run a screen first.</div>';
+    return;
+  }
+
+  const badge = document.getElementById('scr-date-badge');
+  if (badge && scrScreenDate) badge.textContent = 'Data as of ' + scrScreenDate;
+
+  const priceMin = val('sf-price-min');
+  const priceMax = val('sf-price-max');
+  const mcapMin  = val('sf-mcap-min');
+  const mcapMax  = val('sf-mcap-max');
+  const advMin   = val('sf-adv-min');
+  const rsiMin   = val('sf-rsi-min');
+  const rsiMax   = val('sf-rsi-max');
+  const volMax   = val('sf-vol-max');
+  const cmfMin   = val('sf-cmf-min');
+  const highMax  = val('sf-high-max');
+  const rankMin  = val('sf-rank-min');
+  const statusVal = document.getElementById('sf-passes-all').value;
+
+  let results = latestUniverse.filter(r => {
+    if (priceMin !== null && (r.price  ?? 0)           < priceMin) return false;
+    if (priceMax !== null && (r.price  ?? Infinity)     > priceMax) return false;
+    if (mcapMin  !== null && (r.mcap_m ?? 0)            < mcapMin)  return false;
+    if (mcapMax  !== null && (r.mcap_m ?? Infinity)     > mcapMax)  return false;
+    if (advMin   !== null && (r.adv_m  ?? 0)            < advMin)   return false;
+    if (rsiMin   !== null && (r.rsi    ?? 0)            < rsiMin)   return false;
+    if (rsiMax   !== null && (r.rsi    ?? 100)          > rsiMax)   return false;
+    if (volMax   !== null && (r.volatility_pct ?? 999)  > volMax)   return false;
+    if (cmfMin   !== null && (r.cmf    ?? -1)           < cmfMin)   return false;
+    if (highMax  !== null && (r.pct_from_high ?? -999)  < -highMax) return false;
+    if (rankMin  !== null && (r.rank_score ?? 0)        < rankMin)  return false;
+    if (statusVal === 'all')  return !!r.passes_all;
+    if (statusVal === 'near') return !r.passes_all && countFailures(r) === 1;
+    if (statusVal === 'none') return !r.passes_all && countFailures(r) >= 2;
+    return true;
+  });
+
+  results.sort((a, b) => {
+    const av = a[scrSortCol] ?? -Infinity;
+    const bv = b[scrSortCol] ?? -Infinity;
+    return scrSortAsc ? av - bv : bv - av;
+  });
+
+  renderScreenerTable(results);
+}
+
+function resetScreener() {
+  ['sf-price-min','sf-price-max','sf-mcap-min','sf-mcap-max','sf-adv-min',
+   'sf-rsi-min','sf-rsi-max','sf-vol-max','sf-cmf-min','sf-high-max','sf-rank-min'
+  ].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('sf-passes-all').value = '';
+  applyScreener();
+}
+
+function setScrSort(col) {
+  if (scrSortCol === col) scrSortAsc = !scrSortAsc;
+  else { scrSortCol = col; scrSortAsc = false; }
+  applyScreener();
+}
+
+function renderScreenerTable(rows) {
+  const topSet     = new Set(latestTop15.map(r => r.ticker));
+  const passingSet = new Set(latestPassing.map(r => r.ticker));
+  const filterKeys   = ['p_mcap','p_adv','p_vol','p_rsi','p_sma','p_high','p_cmf'];
+  const filterLabels = ['MCap','ADV','Vol','RSI','SMA','52W','CMF'];
+
+  const total    = latestUniverse.length;
+  const passing  = latestUniverse.filter(r => r.passes_all).length;
+  const nearMiss = latestUniverse.filter(r => !r.passes_all && countFailures(r) === 1).length;
+  const chip = (label, val, color) =>
+    `<span style="padding:2px 10px;border-radius:20px;background:${color}22;color:${color};font-size:11px;font-weight:600;">${label}: ${val}</span>`;
+  document.getElementById('scr-summary').innerHTML =
+    chip('Showing', rows.length + ' of ' + total, 'var(--text)') +
+    chip('Passes all', passing, 'var(--green)') +
+    chip('Near miss', nearMiss, '#f59e0b') +
+    `<span style="font-size:11px;color:var(--muted);margin-left:4px;">· sorted by <strong>${scrSortCol}</strong> ${scrSortAsc ? '▲' : '▼'}</span>`;
+
+  if (!rows.length) {
+    document.getElementById('scr-table').innerHTML = '<div class="empty">No stocks match the current filters.</div>';
+    return;
+  }
+
+  const cols = [
+    { key:'ticker',         label:'Ticker',         noSort:true },
+    { key:'price',          label:'Price $' },
+    { key:'mcap_m',         label:'MCap $M' },
+    { key:'adv_m',          label:'ADV $M' },
+    { key:'rsi',            label:'RSI' },
+    { key:'volatility_pct', label:'Vol %' },
+    { key:'cmf',            label:'CMF' },
+    { key:'pct_from_high',  label:'% 52W High' },
+    { key:'rank_score',     label:'Rank Score' },
+  ];
+
+  const arrow = col => scrSortCol !== col
+    ? '<span style="color:var(--muted);opacity:.35">⇅</span>'
+    : (scrSortAsc ? '▲' : '▼');
+
+  let html = `<div class="tbl-wrap"><table><thead><tr><th>#</th>`;
+  cols.forEach(c => {
+    html += c.noSort
+      ? `<th>${c.label}</th>`
+      : `<th style="cursor:pointer;user-select:none" onclick="setScrSort('${c.key}')">${c.label} ${arrow(c.key)}</th>`;
+  });
+  filterLabels.forEach(l => { html += `<th style="text-align:center">${l}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  const tick  = '<span style="color:var(--green);font-size:13px">✓</span>';
+  const cross = '<span style="color:var(--red);font-size:13px">✗</span>';
+
+  rows.forEach((r, i) => {
+    const inTopN    = topSet.has(r.ticker);
+    const inPassing = passingSet.has(r.ticker);
+    const failures  = countFailures(r);
+    let rowStyle = '', tickerStyle = '', badge = '';
+    if (inTopN && r.is_near_miss) { rowStyle = 'background:rgba(245,180,0,.09);'; tickerStyle = 'color:#f5b800;'; badge = ' ~'; }
+    else if (inTopN)    { rowStyle = 'background:rgba(62,207,142,.07);'; tickerStyle = 'color:var(--green);'; badge = ' ★'; }
+    else if (inPassing) { rowStyle = 'background:rgba(91,143,255,.05);'; tickerStyle = 'color:var(--accent);'; }
+    else if (r.is_near_miss) { rowStyle = 'background:rgba(245,180,0,.05);'; tickerStyle = 'color:#f5b800;'; }
+    else if (failures === 1) { rowStyle = 'background:rgba(245,158,11,.04);'; }
+
+    const filterCells = filterKeys.map((k, ki) => {
+      if (r[k]) return `<td style="text-align:center">${tick}</td>`;
+      const filterName = ['mcap','adv','vol','rsi','sma','high','cmf'][ki];
+      if (r.is_near_miss && r.near_miss_filter === filterName) {
+        return `<td style="text-align:center" title="Near-miss: within 10% of threshold"><span style="font-size:13px">🟡</span></td>`;
+      }
+      return `<td style="text-align:center">${cross}</td>`;
+    }).join('');
+
+    html += `<tr style="${rowStyle}">
+      <td class="rank">${i + 1}</td>
+      <td class="ticker-cell" style="${tickerStyle}">${r.ticker}${badge}</td>
+      <td>$${fmtNum(r.price)}</td>
+      <td>${fmtNum(r.mcap_m, 0)}</td>
+      <td>${fmtNum(r.adv_m, 1)}</td>
+      <td>${fmtNum(r.rsi, 1)}</td>
+      <td>${fmtNum(r.volatility_pct, 1)}%</td>
+      <td>${fmtNum(r.cmf, 3)}</td>
+      <td>${fmtNum(r.pct_from_high, 1)}%</td>
+      <td>${r.rank_score != null ? fmtNum(r.rank_score, 4) : '—'}</td>
+      ${filterCells}
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById('scr-table').innerHTML = html;
+}
+
+// Hook switchTab to set date badge + auto-apply on screener open
+(function() {
+  const origSwitch = window.switchTab;
+  window.switchTab = function(id, el) {
+    origSwitch(id, el);
+    if (id === 'screener') {
+      const badge = document.getElementById('scr-date-badge');
+      if (badge && scrScreenDate) badge.textContent = 'Data as of ' + scrScreenDate;
+      if (latestUniverse.length) applyScreener();
+    }
+  };
+})();
+
 </script>
 </body>
 </html>
