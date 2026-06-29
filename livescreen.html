@@ -404,7 +404,7 @@ let currentPortfolio = [];
 async function loadLatestScreen() {
   try {
     // Fetch core data — top15 + all_passing + hold_zone in isolation from all_universe
-    const rows = await sb('screen_runs?select=id,run_date,top15,all_passing,filters,triggered_at&order=id.desc&limit=1');
+    const rows = await sb('screen_runs?select=id,run_date,top15,all_passing,filters,triggered_at&order=triggered_at.desc&limit=1');
     if (!rows || !rows.length) {
       document.getElementById('panel-top15').innerHTML    = '<div class="empty">No screen runs yet. Click ▶ Run Screen.</div>';
       document.getElementById('panel-passing').innerHTML  = '<div class="empty">No screen runs yet.</div>';
@@ -914,14 +914,14 @@ async function importPortfolioCSV(input) {
 // ── Run History ───────────────────────────────────────────────────────────────
 async function loadHistory() {
   try {
-    const rows = await sb('screen_runs?select=id,run_date,universe,filters,created_at&order=run_date.desc&limit=20') || [];
+    const rows = await sb('screen_runs?select=id,run_date,universe,filters,triggered_at&order=triggered_at.desc&limit=20') || [];
     if (!rows.length) {
       document.getElementById('panel-history').innerHTML = '<div class="empty">No screen runs yet.</div>';
       return;
     }
     let html = rows.map(r => {
       const f = r.filters || {};
-      const date = new Date(r.created_at).toLocaleString();
+      const date = new Date(r.triggered_at).toLocaleString();
       return `<div class="run-card">
         <div>
           <div class="run-date">${r.run_date}</div>
