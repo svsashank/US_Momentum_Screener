@@ -108,8 +108,9 @@ def run_backtest(ind, config, rebalance_dates, initial_capital,
                 portfolio_value += pos['shares'] * p
 
         # Screen using only data up to this date — no lookahead
+        # run_screen returns 6-tuple: top15, all_passing, universe_df, hold_zone, rejections, screen_date
         ind_slice = _ind_slice_up_to(ind, rebal_date)
-        top15, all_passing, rejections, screen_date = run_screen(ind_slice, config)
+        top15, all_passing, _universe, _hold_zone, rejections, screen_date = run_screen(ind_slice, config)
         n_passed = len(all_passing)
 
         passing_tickers = set(all_passing['ticker']) if not all_passing.empty else set()
